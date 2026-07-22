@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "lib": ["ES2021", "DOM", "DOM.Iterable"],
+        "strict": true,
+        "noImplicitOverride": true,
+        "experimentalDecorators": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "isolatedModules": true,
+        "skipLibCheck": true,
+        "declaration": false,
+        "sourceMap": false,
+        "noEmit": true
+    },
+    "include": ["Scenarios/*/scripts/**/*.ts"],
+    "exclude": ["dist", "node_modules", "ReleaseScenarios"]
+}

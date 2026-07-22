@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+ReleaseScenarios/
+Scenarios/*/dist/
+
+# IDE
+.idea/
+
+# Logs
+*.log

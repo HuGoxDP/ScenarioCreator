@@ -1,0 +1,22 @@
+{
+  "name": "scenario-creator",
+  "version": "1.0.0",
+  "description": "Centralized builder for WebEngineTS scenarios",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build-package.mjs",
+    "build:all": "node build-package.mjs --all",
+    "build:list": "node build-package.mjs --list",
+    "clean:release": "powershell -NoProfile -Command \"if (Test-Path 'ReleaseScenarios') { Remove-Item -Recurse -Force 'ReleaseScenarios\\*' }\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "WebEngineTS": "file:WebEngineTS-0.1.0.tgz"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  }
+}
