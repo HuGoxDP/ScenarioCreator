@@ -26,6 +26,7 @@ function parseArgs() {
     const selected = [];
     let listOnly = false;
     let buildAll = false;
+    let ktx2 = false;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -35,6 +36,10 @@ function parseArgs() {
         }
         if (arg === "--all") {
             buildAll = true;
+            continue;
+        }
+        if (arg === "--ktx2") {
+            ktx2 = true;
             continue;
         }
         if (arg === "--scenario") {
@@ -55,6 +60,7 @@ function parseArgs() {
         listOnly,
         buildAll,
         selected,
+        ktx2,
     };
 }
 
@@ -156,7 +162,29 @@ function compileScenarioTypescript(scenarioDir, scriptsDir, distDir) {
     });
 }
 
-function buildScenario(scenarioDir) {
+function runKtx2Conversion(scenarioDir) {
+    const script = path.join(scenarioDir, "convert_to_ktx2.sh");
+    const scenarioName = path.basename(scenarioDir);
+    if (!existsSync(script)) {
+        console.log(`  [ktx2] ${scenarioName}: no convert_to_ktx2.sh — skipping (loose-texture scenes only)`);
+        return;
+    }
+    console.log(`  [ktx2] ${scenarioName}: generating .ktx2 alongside originals...`);
+    try {
+        execFileSync("bash", ["convert_to_ktx2.sh"], {
+            cwd: scenarioDir,
+            stdio: "inherit",
+            env: { ...process.env, INCLUDE_SKYBOX: process.env.INCLUDE_SKYBOX ?? "0" },
+        });
+    } catch (err) {
+        console.warn(
+            `  [ktx2] conversion failed (KTX-Software or bash missing?) — ` +
+            `packaging existing textures only. ${err?.message ?? err}`
+        );
+    }
+}
+
+function buildScenario(scenarioDir, ktx2) {
     const scenarioName = path.basename(scenarioDir);
     const scriptsDir = path.join(scenarioDir, "scripts");
     const distDir = path.join(scenarioDir, "dist");
@@ -193,6 +221,10 @@ function buildScenario(scenarioDir) {
     };
 
     writeFileSync(path.join(distDir, "manifest.json"), `${JSON.stringify(manifest, null, 4)}\n`, "utf8");
+
+    if (ktx2) {
+        runKtx2Conversion(scenarioDir);
+    }
 
     if (existsSync(assetsDir)) {
         cpSync(assetsDir, path.join(distDir, "assets"), { recursive: true });
@@ -254,7 +286,7 @@ for (const name of namesToBuild) {
 }
 
 for (const name of namesToBuild) {
-    buildScenario(scenarioMap.get(name));
+    buildScenario(scenarioMap.get(name), options.ktx2);
 }
 
 console.log(`\nDone. Packages are in ${releaseRoot}`);
