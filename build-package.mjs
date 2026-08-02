@@ -162,6 +162,55 @@ function compileScenarioTypescript(scenarioDir, scriptsDir, distDir) {
     });
 }
 
+function findBash() {
+    // Prefer Git Bash over PATH's `bash`: on Windows that is often
+    // System32\bash.exe — the WSL relay, which fails ("execvpe(/bin/bash)")
+    // when no WSL distro provides a usable /bin/bash. Set the BASH env var
+    // to override.
+    const candidates = [
+        process.env.BASH,
+        "C:\\Program Files\\Git\\bin\\bash.exe",
+        "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+        "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+    ].filter(Boolean);
+
+    // Git isn't always under Program Files (e.g. a per-user install under
+    // C:\Users\<user>\Programs\Git). Derive candidates from wherever
+    // git.exe actually is instead of hardcoding a username.
+    try {
+        const whereOut = execFileSync("where.exe", ["git.exe"], { encoding: "utf8" });
+        for (const gitExe of whereOut.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
+            let dir = path.dirname(gitExe);
+            for (let i = 0; i < 3; i++) {
+                candidates.push(path.join(dir, "bin", "bash.exe"), path.join(dir, "usr", "bin", "bash.exe"));
+                dir = path.dirname(dir);
+            }
+        }
+    } catch {
+        // `where.exe` unavailable or git not on PATH — fall through to the other candidates.
+    }
+
+    for (const c of candidates) {
+        if (existsSync(c)) return c;
+    }
+    return "bash";
+}
+
+function findTar() {
+    // Windows ships bsdtar at System32\tar.exe: it understands `C:\...` paths
+    // and `-a` (infer archive format from the extension). Git for Windows
+    // ships GNU tar at usr\bin\tar.exe, which reads `C:\...` as a *remote host*
+    // spec and dies with "Cannot connect to C: resolve failed". A bare
+    // "tar.exe" picks whichever comes first on PATH, so which shell launched
+    // the build silently decides whether packaging works. Resolve explicitly.
+    const systemRoot = process.env.SystemRoot || process.env.windir;
+    if (systemRoot) {
+        const bsdtar = path.join(systemRoot, "System32", "tar.exe");
+        if (existsSync(bsdtar)) return bsdtar;
+    }
+    return "tar.exe";
+}
+
 function runKtx2Conversion(scenarioDir) {
     const script = path.join(scenarioDir, "convert_to_ktx2.sh");
     const scenarioName = path.basename(scenarioDir);
@@ -171,15 +220,16 @@ function runKtx2Conversion(scenarioDir) {
     }
     console.log(`  [ktx2] ${scenarioName}: generating .ktx2 alongside originals...`);
     try {
-        execFileSync("bash", ["convert_to_ktx2.sh"], {
+        execFileSync(findBash(), ["convert_to_ktx2.sh"], {
             cwd: scenarioDir,
             stdio: "inherit",
             env: { ...process.env, INCLUDE_SKYBOX: process.env.INCLUDE_SKYBOX ?? "0" },
         });
     } catch (err) {
         console.warn(
-            `  [ktx2] conversion failed (KTX-Software or bash missing?) — ` +
-            `packaging existing textures only. ${err?.message ?? err}`
+            `  [ktx2] conversion failed — packaging existing textures only. ` +
+            `Needs Git Bash + KTX-Software on PATH; set BASH=<path-to-git-bash.exe> ` +
+            `if not auto-found. ${err?.message ?? err}`
         );
     }
 }
@@ -237,7 +287,7 @@ function buildScenario(scenarioDir, ktx2) {
         throw new Error(`No files were produced for packaging in ${distDir}`);
     }
 
-    execFileSync("tar.exe", ["-a", "-c", "-f", zipPath, ...archiveEntries], {
+    execFileSync(findTar(), ["-a", "-c", "-f", zipPath, ...archiveEntries], {
         cwd: distDir,
         stdio: "inherit",
     });
