@@ -49,6 +49,67 @@ Neither is a ZIP defect. A ZIP is fine as a container; it is being used as the u
 
 ---
 
+## Measured — what is actually inside the archives
+
+Read before optimising anything, because the intuitive answer is wrong for the biggest file.
+Entry sizes from the archives currently in `ReleaseScenarios/`:
+
+| Entry | Raw | Stored | Ratio |
+|---|---|---|---|
+| `Benchscene2` — `assets/models/complex_model.glb` | 38.58 MB | 27.99 MB | **73%** |
+| `Benchscene3` — `assets/textures/moon.jpg`, `mercury.jpg`, `sun.jpg`, `mars.jpg` | ~0.8–1 MB each | unchanged | **100%** |
+| `Benchscene3` — `assets/textures/earth_normal.ktx2` | 2.67 MB | 0.40 MB | **15%** |
+
+Three conclusions:
+
+1. **"Deflate over already-compressed assets is wasted" is only true for the JPEGs.** The GLB
+   deflates by 27% — 10.6 MB — because it carries raw vertex buffers. An earlier draft of this
+   document asserted the opposite from assumption; it was wrong, and storing entries
+   uncompressed wholesale would make `Benchscene2` 10 MB *larger*.
+2. **The real problem in `Benchscene2` is the content, not the container.** 38.58 MB of raw
+   geometry is what makes that scenario slow, and no container change addresses it. Compressing
+   the mesh does — see P0.
+3. **`earth_normal.ktx2` looks mis-configured.** A properly supercompressed KTX2 (UASTC or
+   ETC1S plus zstd) is close to incompressible; this one deflates to 15%, and at 2.67 MB it is
+   *larger* than the JPEG it replaces. KTX2's win is VRAM rather than file size, so being bigger
+   on disk is not automatically wrong — but a 15% deflate ratio says the payload is not
+   supercompressed at all. Worth checking what `convert_to_ktx2.sh` passes to `toktx`.
+
+### Why not 7z (decided 2026-08-11)
+
+LZMA would genuinely beat deflate on that GLB — plausibly another 4–5 MB. It is still the wrong
+move:
+
+- **Browsers cannot read it.** It needs a WASM decoder either bundled into the engine or served
+  by every host. This project already has that scar: the Basis transcoder returns 404 **silently**
+  until some scenario happens to ship a `.ktx2`.
+- **LZMA decompresses several times slower than deflate.** The complaint is *total load time*,
+  so this trades download seconds for CPU seconds on a student laptop.
+- **Solid archives make random access worse**, which is the opposite direction from per-asset
+  addressing. A ZIP's central directory and independent entries are what make range reads
+  possible at all; 7z takes that away.
+- New tooling on both ends — the platform validates with `node-stream-zip`, the build writes
+  with `tar -a`.
+
+The same reasoning rejects tar-based and custom formats. **The container is not the problem.**
+
+## P0 — Compress the content (~1 day, do this first)
+
+Independent of everything else, helps both the ZIP and the manifest path, and it is the fastest
+answer to "large scenarios load slowly".
+
+- Run `complex_model.glb` through `gltf-transform` with Draco or meshopt. Raw vertex data
+  typically shrinks several times over, and both decode fast — unlike LZMA, this reduces bytes
+  *and* keeps decode cheap. Measure rather than trust the ratio; the point is that 38.58 MB of
+  raw geometry is the single largest thing in the whole catalogue.
+- While there: check the KTX2 supercompression question from §"Measured".
+
+**Done when:** `Benchscene2_complexmodel.zip` is materially smaller and the scene renders
+unchanged.
+
+This is deliberately ahead of the manifest work. It is cheaper, it needs no other repository,
+and a manifest that streams needlessly-large assets is still streaming needlessly-large assets.
+
 ## P1 — Emit `scenario.json` beside the ZIP (~2–3 days)
 
 Produce both artifacts from one build. The ZIP keeps working exactly as today; the manifest is
@@ -167,19 +228,24 @@ faster.
 - The `--ktx2` conversion silently degrades to "packaging existing textures only" if the shell
   script fails (verified at ~line 266). That is right for a routine build and wrong for a
   release; consider a `--strict` that fails instead.
-- **[ASSUMPTION, not verified]** the ZIP is written with `tar -a -c -f`, which will deflate.
-  Deflate over `.ktx2` / `.jpg` / `.glb` buys almost nothing and costs decompression time on
-  every load. Worth measuring whether storing them uncompressed loads faster.
+- Storing the already-compressed entries uncompressed is worth measuring, but see §"Measured"
+  below first — the obvious version of this idea is wrong for the file that matters most.
 
 ---
 
 ## Order
 
 ```
-P1 ──► P3          manifest first; variants are meaningless without it
+P0 ──► P1 ──► P3   compress content, then address it, then vary it
 P2                 independent, cheap, and it unblocks the platform's R7
 P4                 whenever
 ```
 
-P1 is the one that unblocks other repositories. Everything the engine built this month is
-waiting on it.
+P0 first because it is cheap, needs no other repository, and a manifest that streams
+needlessly-large assets is still streaming needlessly-large assets.
+
+P1 is the one that unblocks other repositories — everything the engine built this month is
+waiting on it. Start it in its **cheapest form**: `StreamingAssetSource.fromUrl` takes any URL,
+so a directory of hashed files served by nginx proves the entire path with **no platform code
+at all** — no `scenario_assets` table, no manifest endpoint. Those are needed for catalog
+integration and dedup accounting, and can follow once the path is known to work.
