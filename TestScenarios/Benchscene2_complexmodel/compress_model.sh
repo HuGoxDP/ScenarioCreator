@@ -40,6 +40,10 @@
 # USAGE
 #   ./compress_model.sh [input.glb] [output.glb]
 #   Defaults to assets/models/complex_model.glb, rewritten in place.
+#
+#   LOD_RATIOS=25,50 ./compress_model.sh
+#   Emits coarser meshes into <scenario>/lods/models/ instead, for the manifest's
+#   lods[]. Runs on the already-compressed model and never touches assets/.
 
 set -euo pipefail
 
@@ -50,6 +54,68 @@ OUT="${2:-$IN}"
 [[ -f "$IN" ]] || { echo "ERROR: no such file: $IN" >&2; exit 1; }
 
 GT="npx --yes @gltf-transform/cli@4"
+
+# ---------- LOD ladder (LOD_RATIOS=25,50) ----------
+# Coarser meshes for the manifest's lods[]. Written to <scenario>/lods/models/,
+# outside assets/, because build-package.mjs copies assets/ verbatim and levels
+# in the ZIP would make it bigger while making nothing faster — the client would
+# have to take every level to use one.
+#
+# Named <stem>.<percent>.glb so they sort ascending coarse-to-fine, which is the
+# order the engine reads levels in. The full-detail model is not copied here: it
+# is already in the archive and is listed as the top rung.
+#
+# This mode runs on the ALREADY-COMPRESSED model, so it deliberately skips the
+# re-quantize guard below — quantized input is exactly what it expects.
+#
+# MEASURED on the compressed complex_model.glb (2026-08-12):
+#   436 810 triangles / 12 518 232 bytes
+#     -> 50%: 218 402 tris / 8 111 952 bytes
+#     -> 25%: 109 195 tris / 5 826 336 bytes
+#   Both keep extensionsRequired at EXT_texture_webp + KHR_mesh_quantization,
+#   so a coarse level needs no decoder the full one did not.
+#
+#   `weld` before simplify is not optional: without it the simplifier stalls
+#   well short of the target, because this model is a Sketchfab export split
+#   into four 65 532-vertex chunks and split vertices pin the topology. weld
+#   also re-splits the deduplicated UV accessors and inflates the file to
+#   14.54 MB, which is why dedup and quantize have to run again afterwards.
+#
+#   Textures are carried over untouched. A coarse mesh still ships the full
+#   2.81 MB of WebP, so these levels save geometry only.
+if [[ -n "${LOD_RATIOS:-}" ]]; then
+    LOD_DIR="$SCRIPT_DIR/lods/models"
+    STEM="$(basename "${IN%.*}")"
+    mkdir -p "$LOD_DIR"
+
+    WORK="$(mktemp -d)"
+    trap 'rm -rf "$WORK"' EXIT
+
+    echo "==> welding $IN (needed before simplification)"
+    $GT weld "$IN" "$WORK/welded.glb"
+
+    for pct in ${LOD_RATIOS//,/ }; do
+        DST="$LOD_DIR/${STEM}.${pct}.glb"
+        if [[ -f "$DST" && "${FORCE:-0}" != "1" ]]; then
+            echo "  skip (exists): $(basename "$DST")"
+            continue
+        fi
+        echo "==> level ${pct}%"
+        # --error 0.05 lets the simplifier actually reach the ratio; the default
+        # stops early on this topology and silently returns a nearly full mesh.
+        $GT simplify "$WORK/welded.glb" "$WORK/s.glb" --ratio "0.${pct}" --error 0.05
+        $GT dedup "$WORK/s.glb" "$WORK/d.glb"
+        $GT quantize "$WORK/d.glb" "$WORK/q.glb"
+        $GT validate "$WORK/q.glb"
+        mv -f "$WORK/q.glb" "$DST"
+        echo "    $(stat -c %s "$DST") bytes -> $DST"
+    done
+
+    echo
+    echo "Ladder in $LOD_DIR:"
+    ls -l "$LOD_DIR" | tail -n +2 | awk '{printf "  %-32s %12d\n", $9, $5}'
+    exit 0
+fi
 
 # ---------- guard: never re-quantize ----------
 if $GT inspect "$IN" 2>/dev/null | grep -q "KHR_mesh_quantization"; then

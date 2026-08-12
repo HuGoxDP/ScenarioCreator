@@ -432,12 +432,43 @@ ends each, all matching. Rendering is unaffected — both load paths still agree
 
 - **Peak texture VRAM against a budget has not been measured.** The criterion asks that
   `TextureStreaming` measurably lower it; the only GPU available here is swiftshader, where the
-  number would mean nothing. This needs the engine's harness on real hardware.
+  number would mean nothing. This is now the *single* thing standing between P3 and done, and
+  it cannot be closed in this repository.
 - **The dual-format archive has not been retired.** `Benchscene3` still ships `.jpg` *and*
   `.ktx2` in the ZIP. Removing it is now *possible* — the A/B it exists for is expressible as
   two manifest levels — but it changes what the ZIP contains, and the ZIP is still the only
   thing the platform can consume. Worth doing deliberately, after the platform reads manifests.
-- **Mesh decimation** remains untouched, as the original plan intended: textures first.
+### Mesh decimation — done 2026-08-12
+
+`LOD_RATIOS=25,50 ./compress_model.sh` emits coarser meshes into
+`<scenario>/lods/models/`, and the same `findLadder` picks them up — the naming convention
+(`<stem>.<n>.<ext>`, ascending) turned out to generalise from texture sizes to mesh percentages
+without changing the manifest code. `Benchscene2` now publishes three levels:
+
+| level | triangles | bytes |
+|---|---|---|
+| 0 | 109 195 | 5 826 336 |
+| 1 | 218 402 | 8 111 952 |
+| 2 (the archive's own) | 436 810 | 12 518 232 |
+
+`extensionsRequired` stays `EXT_texture_webp` + `KHR_mesh_quantization` at every level, so a
+coarse mesh needs no decoder the full one did not — the constraint from P0 still holds.
+`Benchscene2_complexmodel.zip` is unchanged at 9 710 408 bytes.
+
+Two things that are not obvious and cost time:
+
+- **`weld` before `simplify` is not optional.** Without it the simplifier stops far short of the
+  target: this model is a Sketchfab export split into four 65 532-vertex chunks, and split
+  vertices pin the topology. The default `--error` also stops it early, so it needs `0.05` to
+  actually reach the ratio. Both failure modes are silent — you get a "simplified" mesh that is
+  nearly full size.
+- **`weld` undoes `dedup`.** It re-splits the shared UV accessors and inflates the file to
+  14.54 MB, so `dedup` and `quantize` have to run again afterwards. The pipeline is
+  weld → simplify → dedup → quantize.
+
+**Textures are carried over untouched**, so a coarse mesh still ships the full 2.81 MB of WebP.
+Combining a coarse mesh with a coarse texture set is a further step, and a bigger one, because
+it means a level is no longer one file.
 
 ### Original plan
 
