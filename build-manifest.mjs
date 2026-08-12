@@ -17,6 +17,7 @@
 //     npm run build -- --scenario Benchscene3_solarsystem
 //     node build-manifest.mjs --scenario Benchscene3_solarsystem
 //     node build-manifest.mjs --verify        # re-check everything emitted
+//     node build-manifest.mjs --verify-fetch  # load it all through the engine
 //
 //   Folding this into build-package.mjs is a one-line call once the two are
 //   wanted in a single pass; it is kept separate for now so the ZIP path stays
@@ -45,12 +46,13 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-    existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync,
+    existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { parseStreamingManifest, toScenarioManifest } from "WebEngineTS";
+import { parseStreamingManifest, StreamingAssetSource, toScenarioManifest } from "WebEngineTS";
 
 const rootDir = process.cwd();
 const scenariosRoot = path.join(rootDir, "Scenarios");
@@ -84,12 +86,14 @@ function parseArgs() {
     let buildAll = false;
     let includeTests = false;
     let verify = false;
+    let verifyFetch = false;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
         if (arg === "--all") { buildAll = true; continue; }
         if (arg === "--tests") { includeTests = true; continue; }
         if (arg === "--verify") { verify = true; continue; }
+        if (arg === "--verify-fetch") { verifyFetch = true; continue; }
         if (arg === "--scenario") {
             const value = args[i + 1];
             if (!value || value.startsWith("--")) {
@@ -104,7 +108,101 @@ function parseArgs() {
         throw new Error(`Unknown argument: ${arg}`);
     }
 
-    return { buildAll, includeTests, selected, verify };
+    return { buildAll, includeTests, selected, verify, verifyFetch };
+}
+
+/**
+ * Pulls every manifest through the engine's own loader over real HTTP.
+ *
+ * `--verify` proves the manifest describes files that exist. This proves the
+ * *engine* can consume it: `StreamingAssetSource.fromUrl` fetches the manifest,
+ * resolves each url against its location, sorts assets by priority and hands
+ * back bytes. Everything short of putting pixels on screen is exercised here,
+ * which is worth having because the alternative — finding out in a browser — is
+ * the slowest possible feedback loop for a typo in a url.
+ *
+ * A plain static server is deliberate: it is the whole deployment story. If this
+ * passes, `ReleaseScenarios/` behind any file server is a working origin, and no
+ * platform code is needed to prove the path.
+ */
+async function verifyByFetch() {
+    const mimes = {
+        ".json": "application/json", ".js": "text/javascript", ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg", ".png": "image/png", ".ktx2": "image/ktx2",
+        ".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".webp": "image/webp",
+    };
+
+    const server = createServer((req, res) => {
+        const rel = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+        const abs = path.join(releaseRoot, rel);
+        // Refuse to serve outside the release root even on a throwaway server;
+        // a path-traversal-shaped bug here would silently "pass" the check.
+        if (!abs.startsWith(releaseRoot) || !existsSync(abs) || !statSync(abs).isFile()) {
+            res.writeHead(404);
+            res.end("not found");
+            return;
+        }
+        res.writeHead(200, { "content-type": mimes[path.extname(abs)] ?? "application/octet-stream" });
+        res.end(readFileSync(abs));
+    });
+
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    let problems = 0;
+
+    try {
+        for (const dir of [releaseRoot, testReleaseRoot]) {
+            if (!existsSync(dir)) continue;
+            for (const name of readdirSync(dir).filter((n) => n.endsWith(".scenario.json"))) {
+                const urlPath = path.relative(releaseRoot, path.join(dir, name)).replace(/\\/g, "/");
+                let local = 0;
+
+                const source = await StreamingAssetSource.fromUrl(`${base}/${urlPath}`);
+
+                for (const scriptPath of source.listScripts()) {
+                    const got = await source.readScript(scriptPath);
+                    if (got == null || got.length === 0) {
+                        console.log(`  EMPTY SCRIPT ${scriptPath}`);
+                        local += 1;
+                    }
+                }
+
+                for (const asset of source.manifest.assets) {
+                    const bytes = await source.readBytes(asset.path);
+                    const expected = asset.lods[0].bytes;
+                    if (expected !== undefined && bytes.length !== expected) {
+                        console.log(`  SIZE ${asset.path}: fetched ${bytes.length}, manifest says ${expected}`);
+                        local += 1;
+                    }
+                }
+
+                const byPriority = ["critical", "high", "low", "lazy"]
+                    .map((p) => [p, source.pathsByPriority(p).length])
+                    .filter(([, n]) => n > 0)
+                    .map(([p, n]) => `${n} ${p}`)
+                    .join(", ");
+
+                console.log(
+                    `${local ? "FAIL" : "ok  "} ${urlPath}  ` +
+                    `id=${source.manifest.id}  scripts=${source.listScripts().length}  ` +
+                    `assets=${source.manifest.assets.length} (${byPriority})  ` +
+                    `identity=${source.assetEntries().length}  ` +
+                    `fetched=${fmt(source.bytesFetched)} in ${source.requestCount} requests`
+                );
+                problems += local;
+                source.dispose?.();
+            }
+        }
+    } finally {
+        server.close();
+    }
+
+    console.log(
+        problems === 0
+            ? "\nEvery manifest loaded through the engine's own StreamingAssetSource."
+            : `\n${problems} problems.`
+    );
+    if (problems > 0) process.exit(1);
 }
 
 /**
@@ -433,6 +531,11 @@ const options = parseArgs();
 
 if (options.verify) {
     verifyManifests();
+    process.exit(0);
+}
+
+if (options.verifyFetch) {
+    await verifyByFetch();
     process.exit(0);
 }
 

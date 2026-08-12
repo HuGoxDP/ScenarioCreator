@@ -214,11 +214,25 @@ The ladder degenerates on a scene made only of textures: `Benchscene3` came out 
 2 critical / 22 low, one undifferentiated block that measures nothing, which is why it is the
 one scenario given a meta file (now 2 critical / 4 high / 18 low, reasoned in the file itself).
 
-**Not done — the done-criterion below is unmet.** Nothing has been through
-`Application.loadScenarioFromManifest`. Everything above is static verification: the schema is
-the engine's, the parser is the engine's, the bytes are checked, but no frame has been
-rendered and no `timeToFirstFrame` compared. That is the next thing to do, and it needs a
-browser.
+**The delivery path is proven; only rendering is not.** `--verify-fetch` serves
+`ReleaseScenarios/` from a throwaway static server and pulls every manifest through the
+engine's own `StreamingAssetSource.fromUrl` — fetching the manifest, resolving each url
+against its location, sorting by priority and returning bytes. All five load:
+
+| manifest | scripts | assets | fetched |
+|---|---|---|---|
+| `Molecules` | 8 | 0 | 66.8 KB / 8 requests |
+| `solar-system-scenario` | 5 | 18 (1 critical, 6 high, 11 low) | 26.57 MB / 23 requests |
+| `Benchscene1_primitives` | 1 | 0 | 4.2 KB / 1 request |
+| `Benchscene2_complexmodel` | 1 | 1 (1 high) | 11.94 MB / 2 requests |
+| `Benchscene3_solarsystem` | 5 | 24 (2 critical, 4 high, 18 low) | 10.77 MB / 29 requests |
+
+A plain static server being enough *is* the deployment story: `ReleaseScenarios/` behind any
+file server is a working origin, and no platform code was needed to prove it.
+
+**Still unmet:** nothing has been through `Application.loadScenarioFromManifest`, so no frame
+has been rendered and no `timeToFirstFrame` compared. That needs WebGL, and therefore a
+browser. Everything up to the point of handing bytes to the GPU now has coverage.
 
 ### Original plan
 
@@ -351,9 +365,11 @@ P2                     independent, cheap, and it unblocks the platform's R7
 P4                     whenever
 ```
 
-**P1 is built but unproven.** The manifests exist, validate against the engine's own parser and
-resolve to real bytes; none has been loaded in a browser. Do that before P3 — LOD variants are
-only worth emitting once something has read a single-level manifest end to end.
+**P1 is built and loads; it has not rendered.** The manifests validate against the engine's own
+parser and every one of them loads through the engine's own `StreamingAssetSource` over HTTP.
+What is left is the GPU half — a browser, `loadScenarioFromManifest`, and a `timeToFirstFrame`
+worth comparing. Do that before P3: LOD variants are only worth emitting once a single-level
+manifest has drawn a frame.
 
 **P1 is next.** P0 left it one concrete gift and one concrete warning: the gift is that the
 `.ktx2` and WebP payloads are now genuinely incompressible, so per-asset delivery finally
