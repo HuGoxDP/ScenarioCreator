@@ -1,0 +1,10 @@
+{
+  "id": "optics-lenses",
+  "name": "Оптика: лінзи та дзеркала",
+  "description": "Оптична лава: три головні промені будують зображення наживо. Повзунки фокусної відстані та відстані до предмета покривають усі випадки — від дійсного зменшеного до уявного збільшеного, для лінз і для дзеркал.",
+  "category": "education",
+  "version": "1.0.0",
+  "contentVersion": 1,
+
+  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name. category is the engine's ScenarioCategory enum; the school subject (physics / Фізика) is a platform field entered at upload in /admin. No streaming.priorities block: the scenario is fully procedural and ships without a single asset."
+}

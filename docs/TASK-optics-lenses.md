@@ -15,9 +15,9 @@ Scenarios/Optics/
     ├── Scenario.ts
     └── helpers/
         ├── UIKit.ts             ← copy
-        ├── CameraSetup.ts       ← copy
-        ├── Bench.ts             ← axis, arrows, F and 2F markers, the lens/mirror body
-        └── Rays.ts              ← ray construction and the thin-lens solver
+        ├── FlatCamera.ts        ← fixed orthographic camera, pan and zoom only
+        ├── Bench.ts             ← the line pool, plus the lens, mirror and arrow shapes
+        └── Rays.ts              ← ray construction and the thin-lens solver, engine-free
 ```
 
 ## 2. Sign convention — decide it once, state it in the code
@@ -45,15 +45,25 @@ Flat, on the XY plane, viewed down −Z. Use `Camera.orthographic = true` with `
 covering the bench — a perspective camera makes a ray diagram lie, because two rays that meet on
 screen may not meet in the plane. Lock the camera; pan and zoom only.
 
-- **Optical axis** — a thin `LineRenderer` along X, with tick marks and F, 2F, −F, −2F labelled
-  on both sides (world-space canvases, umbrella §5).
+- **Optical axis** — a thin `LineRenderer` along X, with F marked by a single tick and 2F by a
+  double one, on both sides.
+
+  *No world-space labels.* The umbrella document offers `CanvasRenderMode.WorldSpace` for exactly
+  this, and it was not used: whoever builds this cannot see the result in this environment, and a
+  label whose size or placement is wrong is worse than a tick whose meaning the legend states. A
+  single-versus-double tick is distinguishable without reading anything, and the legend panel
+  names both. Revisit once someone can look at a screenshot.
 - **Object** — an upright arrow at `x = −d`, height `h`: a thin cylinder plus a cone tip.
-- **Lens** — a real biconvex/biconcave profile, not a flattened sphere. Build it as a custom
-  `Mesh`: sample the two circular arcs, extrude a few units in Z, set `vertices`/`triangles` and
-  call `recalculateNormals`. `Mesh` has a public constructor and settable buffers, so this is
-  ordinary code. Material: `StandardMaterial` with `renderMode = MaterialRenderMode.Transparent`,
-  a pale blue albedo, high `smoothness`. **The shape carries the lesson** — a converging lens must
-  be visibly thicker in the middle, a diverging one thinner.
+- **Lens** — a real biconvex or biconcave profile, generated from one half-width function so the
+  two shapes cannot end up drawn by different rules. **The shape carries the lesson** — a
+  converging lens must be visibly thicker in the middle, a diverging one thinner.
+
+  *Built as an outline, not a solid.* This section first called for an extruded custom `Mesh`
+  with a transparent material. As built, the whole bench is `LineRenderer` strokes, the lens
+  included. Seen square-on in an orthographic view — which §3 requires anyway — the outline is
+  what a textbook draws, the thick-middle/thin-middle distinction is the silhouette itself rather
+  than a shading cue that depends on the lights, and no construction line can end up hidden
+  behind a surface. `helpers/Bench.ts` states the same reasoning at the top.
 - **Mirror mode** — the same solver, drawn as a curved arc with a hatched back.
 - **Image** — an arrow, drawn **solid** when real and **translucent with a dashed outline** when
   virtual. This distinction is the second most common exam mistake after the sign of Γ.
@@ -78,11 +88,19 @@ found. That agreement *is* the proof the construction is not a special case.
 
 | Control | Range |
 |---|---|
-| Slider «Фокусна відстань f» | −20 … 20 (0 excluded — skip over a dead band around zero) |
-| Slider «Відстань до предмета d» | 1 … 60 |
-| Slider «Висота предмета h» | 0.5 … 8 |
+| Slider «Фокусна відстань \|f\|» | 2 … 12 — a **magnitude**; the dropdown supplies the sign |
+| Slider «Відстань до предмета d» | 1 … 24 |
+| Slider «Висота предмета h» | 0.5 … 5 |
 | Dropdown «Оптичний елемент» | Збиральна лінза / Розсіювальна лінза / Увігнуте дзеркало / Опукле дзеркало |
-| Toggle «Всі промені», «Підписи», «Сітка» | — |
+| Toggle «Усі промені», «Сітка» | — |
+| ←/→ held | Walks d across f slowly enough to watch the transition in §6 |
+
+*Two changes from the first draft of this table.* The signed −20…20 slider with a dead band
+around zero is gone: the dropdown already decides whether the element converges, so a signed
+slider says the same thing twice and needs a hole in its range to stay legal. And the ranges are
+smaller, because the bench has to fit in one orthographic view — at d = 60 the object is off the
+frame. «Підписи» is gone with the world-space labels; the legend panel names every colour
+instead.
 
 Readout panel, live: `1/f = 1/d + 1/d′`, with the numbers substituted; `d′`; `Γ`; and three
 plain-language verdicts — «дійсне / уявне», «перевернуте / пряме», «збільшене / зменшене / рівне».
