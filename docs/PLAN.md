@@ -177,7 +177,50 @@ unchanged.
 This is deliberately ahead of the manifest work. It is cheaper, it needs no other repository,
 and a manifest that streams needlessly-large assets is still streaming needlessly-large assets.
 
-## P1 — Emit `scenario.json` beside the ZIP (~2–3 days)
+## P1 — Emit `scenario.json` beside the ZIP — ⚠️ built 2026-08-12, not yet rendered
+
+Shipped as [`build-manifest.mjs`](../build-manifest.mjs) — `npm run manifest -- --scenario X`,
+`npm run manifest:all`, `npm run manifest:verify`. Emits
+`ReleaseScenarios/<name>.scenario.json` plus a **shared** content-addressed store at
+`ReleaseScenarios/objects/<ab>/<sha256><ext>`. No `baseUrl` is written, so the manifest's own
+location is the base and serving `ReleaseScenarios/` as static files is a complete host — the
+cheapest form this document asked for, with no platform code at all.
+
+**Deviation, on purpose:** it reads the **built ZIP** rather than emitting from inside
+`build-package.mjs`. The ZIP already holds exactly what a manifest describes — compiled
+`scripts/*.js`, `assets/**` as shipped, and the `entryPoint` — so there is no second copy of
+discovery, compile or entry-point detection to drift. It is also the only way to land this
+without colliding with the uncommitted edits that currently span every region of
+`build-package.mjs`. Folding it into a single pass is one call, whenever that is wanted.
+
+**Cross-scenario dedup is real and measured.** Across all five scenarios: 47 objects stored
+(42.25 MB), **16 shared, 7.10 MB not stored twice** — `solar-system-scenario` and
+`Benchscene3_solarsystem` do carry the same planet textures, exactly as predicted above.
+
+**Verified against the engine's own code, not a reimplementation of its rules.** The installed
+`WebEngineTS` exports `parseStreamingManifest` and `toScenarioManifest`, so every manifest is
+parsed back through them before it is written, and `--verify` re-reads all of them and confirms
+each URL resolves to bytes that still hash to what was recorded: **63 referenced files, 0
+problems**. Rebuilding produces a **byte-identical** manifest, so the guids survive a rebuild —
+which is half of P2's done-criterion, met here because a guid is derived from
+`sha256(id + path)` and never from content. Renaming an asset still changes its guid; that is
+the honest limit of deriving identity from a path.
+
+**Priorities: a built-in ladder plus an override, because the ladder is a guess.** The default
+keys on file type — `skybox/**` critical, `**/*.glb` high, everything else low — and a scenario
+overrides it in `scenario.meta.json`. That file is also where P2 should read real id / name /
+version from, which is why identity lives there rather than in a streaming-only side file.
+The ladder degenerates on a scene made only of textures: `Benchscene3` came out as
+2 critical / 22 low, one undifferentiated block that measures nothing, which is why it is the
+one scenario given a meta file (now 2 critical / 4 high / 18 low, reasoned in the file itself).
+
+**Not done — the done-criterion below is unmet.** Nothing has been through
+`Application.loadScenarioFromManifest`. Everything above is static verification: the schema is
+the engine's, the parser is the engine's, the bytes are checked, but no frame has been
+rendered and no `timeToFirstFrame` compared. That is the next thing to do, and it needs a
+browser.
+
+### Original plan
 
 Produce both artifacts from one build. The ZIP keeps working exactly as today; the manifest is
 additive.
@@ -303,10 +346,14 @@ faster.
 ## Order
 
 ```
-P0 ✅ ─► P1 ──► P3   compress content, then address it, then vary it
-P2                   independent, cheap, and it unblocks the platform's R7
-P4                   whenever
+P0 ✅ ─► P1 ⚠️ ─► P3   compress content, then address it, then vary it
+P2                     independent, cheap, and it unblocks the platform's R7
+P4                     whenever
 ```
+
+**P1 is built but unproven.** The manifests exist, validate against the engine's own parser and
+resolve to real bytes; none has been loaded in a browser. Do that before P3 — LOD variants are
+only worth emitting once something has read a single-level manifest end to end.
 
 **P1 is next.** P0 left it one concrete gift and one concrete warning: the gift is that the
 `.ktx2` and WebP payloads are now genuinely incompressible, so per-asset delivery finally

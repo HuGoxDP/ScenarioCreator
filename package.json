@@ -7,6 +7,9 @@
     "build": "node build-package.mjs",
     "build:all": "node build-package.mjs --all",
     "build:list": "node build-package.mjs --list",
+    "manifest": "node build-manifest.mjs",
+    "manifest:all": "node build-manifest.mjs --all",
+    "manifest:verify": "node build-manifest.mjs --verify",
     "clean:release": "powershell -NoProfile -Command \"if (Test-Path 'ReleaseScenarios') { Remove-Item -Recurse -Force 'ReleaseScenarios\\*' }\""
   },
   "keywords": [],
