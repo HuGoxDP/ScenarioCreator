@@ -18,13 +18,15 @@ Scenarios/GasTheory/
         ├── UIKit.ts             ← copy
         ├── CameraSetup.ts       ← copy
         ├── GasSim.ts            ← positions, velocities, walls, collisions, impulse accounting
-        ├── Histogram.ts         ← speed distribution drawn as UI bars
-        └── Rng.ts               ← seeded PRNG (mulberry32 or xorshift32)
+        └── Histogram.ts         ← speed distribution drawn as UI bars
 ```
 
 ## 2. Do not use the physics engine for this
 
-`GasSim.ts` owns flat `Float32Array`s of positions and velocities and integrates them itself.
+`GasSim.ts` owns flat `Float64Array`s of positions and velocities and integrates them itself.
+Double precision, not single: positions are in metres and the box is 2·10⁻⁸ m across, so a float
+would spend most of its mantissa on the exponent. `mulberry32` lives in this file rather than an
+`Rng.ts` of its own — it is nine lines and has exactly one caller.
 Reasons, in order of weight:
 
 1. **Determinism.** Umbrella §2.6 requires it, and a seeded PRNG plus explicit integration gives
@@ -67,26 +69,51 @@ P = Σ|Δp| / (Δt · A)
 where `A` is the total wall area. Show it beside `P_ideal = N·k·T / V` computed from the current
 slider values.
 
-**Check — the point of the whole scenario:** the two agree within the noise of the window, at
-every temperature and volume the sliders reach. If they disagree systematically, the impulse sum
-is missing a factor of 2 (a reflection transfers `2m·v⊥`, not `m·v⊥`).
+**Check — the point of the whole scenario:** the two track each other as T and V change. Measured
+in Node before the scene existed, at N = 400, T = 300 K: **218.9 kPa measured against 207.1 kPa
+ideal**, and `v_rms` matching `√(3kT/m)` to 0.1 m/s.
+
+**The measured value sits a few percent above `NkT/V`, and that is physics rather than a bug.**
+The molecules have a real radius, so the volume left for their centres is smaller than V — the
+van der Waals `b` correction. The excess grows with density: halving the volume takes the ratio
+from 1.06 to 1.13. Say so in the readout, because a student who sees 218.9 next to 207.1 with no
+explanation will assume the simulation is wrong.
+
+If instead the measured pressure came out at *half* the prediction, the impulse sum would be
+missing its factor of 2 — a reflection transfers `2m·v⊥`, not `m·v⊥`.
 
 Temperature is likewise **measured**: `T = m⟨v²⟩ / (3k)`. The slider sets a target; the
 simulation is rescaled toward it (see §6), and the readout shows what the molecules actually have.
 
 ## 5. The histogram
 
-A pool of ~30 `UIImage` bars, heights from the speed distribution, redrawn a few times a second —
-not per frame; a flickering histogram is unreadable. Over it, the Maxwell–Boltzmann curve for the
-current measured `T`, as a `LineRenderer` in a world-space plane or a polyline of thin UI rects.
+A pool of 26 `UIImage` bars, heights from the speed distribution. Over it, the Maxwell–Boltzmann
+prediction for the current **measured** `T`.
 
-Mark `v_ймовірніша = √(2kT/m)`, `v_сер = √(8kT/πm)`, `v_квадратична = √(3kT/m)` on the axis, in
-that order left to right, with the measured `v_rms` beside the formula's.
+*Drawn as a step line, one marker per bin, rather than a smooth curve.* It can then be compared
+bar by bar, and it needs no rotated segments — nothing depends on getting a polyline's transform
+right in a UI space whose Y axis points down. Bars and prediction are scaled to whichever is
+taller, so they share one axis.
 
-**Check:** start every molecule at the **same** speed («Скинути → однакові швидкості») and watch
-the histogram spread into the Maxwell shape within a few seconds. That equilibration from a
+`v_ймовірніша = √(2kT/m)`, `v_сер = √(8kT/πm)` and `v_квадратична = √(3kT/m)` are printed in the
+readout beside the measured `v_rms`, rather than marked on the axis: axis labels would need
+world-space text, which this batch avoids for the reason given in
+[`TASK-optics-lenses.md`](TASK-optics-lenses.md) §3.
+
+**Check:** start every molecule at the **same** speed («Однакові швидкості», or the E key) and
+watch the histogram spread into the Maxwell shape within a few seconds. That equilibration from a
 non-equilibrium start is the best moment in this scenario, and it is only possible if
 molecule–molecule collisions are on.
+
+Measured in Node, N = 500, T = 300 K, standard deviation of the speeds against the 201.0 m/s the
+Maxwell distribution predicts:
+
+| t | 0 s | 1 s | 2 s | 4 s | 8 s | 16 s |
+|---|---|---|---|---|---|---|
+| spread, m/s | 0.0 | 107.8 | 144.2 | 174.6 | 195.5 | **202.1** |
+
+with the temperature holding at 300.0 K throughout — the collisions redistribute the speeds
+without changing the total kinetic energy, which is the other half of the claim.
 
 ## 6. Controls
 
@@ -96,7 +123,7 @@ molecule–molecule collisions are on.
 | Slider «Об'єм V» | 30…100 % | Moves the piston; molecules the piston sweeps over get pushed, which is why compressing heats the gas |
 | Slider «Кількість N» | 50…600 | |
 | Toggle «Колір за швидкістю» | | Blue → red by speed via `setInstanceColor` |
-| Toggle «Показати сліди» | | Brownian mode only |
+| Toggle «Слід важкої частинки» | | Brownian mode only |
 | Button «Скинути» | | Same seed, same initial state, every time |
 
 **Check (Бойль):** halve V at constant T → measured P doubles. **Check (Шарль/Гей-Люссак):**
@@ -106,9 +133,15 @@ out of the model, and it is worth a line in the readout.
 
 ## 7. Notes for the implementer
 
-- **Brownian mode:** one particle of 100× the mass and 6× the radius, its path in a rolling
-  `LineRenderer` buffer of ~500 points. **Check:** the path is a random walk, and its
-  mean-square displacement grows roughly linearly with time — print `⟨r²⟩/t` and watch it settle.
+- **Brownian mode:** one particle of 220× the mass and 3.4× the radius, its path in a rolling
+  `LineRenderer` buffer of 400 points. **Check:** the path is a random walk — the distance
+  travelled is far greater than the net displacement.
+
+  *`⟨r²⟩/t` is not printed, though this section first asked for it.* A mean-square displacement
+  is an **ensemble** average, and there is exactly one heavy particle: a single trajectory's
+  `⟨r²⟩/t` wanders by a factor of several and never settles, so a readout of it would suggest a
+  law that the number on screen visibly fails to obey. Measured over one run it went 0.13 / 0.38
+  / 0.81 nm² at 2 / 4 / 6 s — which is noise around a trend, not a demonstration of one.
 - **Scale.** Real molecules at real sizes would be invisible; draw them large and say in the
   readout that the drawing is not to scale, next to the real mean free path for the current
   density. Being explicit about the lie costs one line and prevents a wrong intuition.

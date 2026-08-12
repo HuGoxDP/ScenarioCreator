@@ -158,22 +158,16 @@ who wrote it. A Check that cannot be performed means the scenario is not finishe
 inherited from [`TASK-ui-showcase.md`](TASK-ui-showcase.md) and it is the only thing standing in
 for a test runner here.
 
-## 7. Engine gaps found while building — for the handover
+## 7. Engine gaps go in their own file
 
 Rule 3 says to report what the engine cannot do rather than working around it inside a scenario.
-This is that list. Each was established from the installed engine, not assumed.
+That list lives in **[`ENGINE-GAPS.md`](ENGINE-GAPS.md)**, not here and not scattered through the
+per-scenario documents: it is read by whoever works on WebEngineTS, who has no reason to open a
+scenario spec. Two are recorded so far — `PhysicMaterial.friction` never reaching a contact, and
+`Slider` having no `setValueWithoutNotify`.
 
-**`PhysicMaterial.friction` never reaches a contact.** It is written onto a cannon-es `Material`,
-but cannon only reads friction through a `ContactMaterial` registered for a *pair* of materials,
-and the engine never calls `world.addContactMaterial` — zero call sites in `WebEngineTS.esm.js`.
-Every contact falls back to `world.defaultContactMaterial`, a hard-coded friction of **0.3**. Any
-scenario with a friction control is affected; `mechanics-incline` integrates its own equation of
-motion because of it. The engine-side fix is to register a `ContactMaterial` per material pair
-(or to expose `world.defaultContactMaterial` so a scenario can set it).
-
-**`Slider` has no `setValueWithoutNotify`.** `Toggle`, `Dropdown` and `Scrollbar` all have one.
-`makeSlider` in the shared `UIKit.ts` works around it with a suppression flag; a symmetric API
-would remove the need.
+When a scenario has to work around the engine, add the entry there and link to it from the
+scenario's own document.
 
 ## 8. Two things to settle before writing code
 

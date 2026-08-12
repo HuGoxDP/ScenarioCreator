@@ -1,0 +1,10 @@
+{
+  "id": "gas-theory",
+  "name": "Молекулярно-кінетична теорія",
+  "description": "Сотні молекул азоту в коробці з поршнем. Тиск вимірюється за ударами об стінки й показується поряд із передбаченням NkT/V, а розподіл Максвелла виникає сам із однакових початкових швидкостей.",
+  "category": "simulation",
+  "version": "1.0.0",
+  "contentVersion": 1,
+
+  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name. category is 'simulation': the scenario integrates a model over time. The school subject (physics / Фізика) is a platform field entered at upload in /admin. No streaming.priorities block: fully procedural, no assets."
+}

@@ -47,8 +47,8 @@ only occurrence being cannon's own method definition. Every contact therefore fa
 `world.defaultContactMaterial`, which is a hard-coded friction of **0.3**. A μ slider wired to
 `PhysicMaterial` would move and change nothing at all.
 
-That is an engine gap, recorded in
-[`TASK-catalogue-expansion.md`](TASK-catalogue-expansion.md) §8 for the handover. In the meantime
+That is an engine gap, written up in full — with the evidence and the engine-side fix — as entry
+1 of [`ENGINE-GAPS.md`](ENGINE-GAPS.md). In the meantime
 the inclined plane loses nothing by being integrated directly: `a = g(sin α − μ cos α)` is exact
 for this problem, not an approximation of what a solver would produce. `helpers/Slide.ts` imports
 nothing from the engine, which also means the physics is checkable in Node — and it was checked
