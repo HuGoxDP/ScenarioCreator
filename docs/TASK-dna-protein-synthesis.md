@@ -97,9 +97,15 @@ context. Keep them short enough that a student can step through one in a minute.
 
 - **Bottom strip** — the sequence in a monospace-ish layout, the current codon highlighted, the
   already-translated part dimmed. This is the scenario's most-read element; give it room.
-- **Right panel** — the codon table inside a `ScrollRect` + `RectMask2D`, auto-scrolled to the
-  current codon and highlighted. Wire the scrollbar both ways with `setValueWithoutNotify`, or
-  the bar and the view will fight (the engine's own docs call this out).
+- **Right panel** — the codon table, four columns by the first base and sixteen rows by the
+  second and third, with the current codon highlighted.
+
+  *Built differently from how this section first specified it.* The original called for a
+  `ScrollRect` + `RectMask2D` auto-scrolled to the current codon. All 64 cells turn out to fit on
+  screen at once in the textbook's own 4×16 layout, which removes the scrolling, the two-way
+  scrollbar wiring and the class of bugs that comes with it — and lands on the arrangement
+  students have already seen in print. The `ScrollRect` demonstration belongs in
+  [`TASK-ui-showcase.md`](TASK-ui-showcase.md), which exists for exactly that.
 - **Left panel** — current step, its explanation in one sentence, and the growing peptide as text.
 - **Controls** — «◀ Крок», «Крок ▶», «Авто ▶/⏸», speed slider (0.25×…4×), «Скинути»,
   toggle «Водневі зв'язки», dropdown of the three sequences.

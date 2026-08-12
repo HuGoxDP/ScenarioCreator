@@ -1,0 +1,10 @@
+{
+  "id": "dna-protein-synthesis",
+  "name": "ДНК і синтез білка",
+  "description": "Подвійна спіраль з реальною геометрією B-ДНК, яка розплітається у транскрипцію, а потім у трансляцію — кодон за кодоном, проти повної таблиці генетичного коду.",
+  "category": "education",
+  "version": "1.0.0",
+  "contentVersion": 1,
+
+  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name — the derived value would be 'dna'. category is the engine's ScenarioCategory enum; the school subject (biology / Біологія) is a platform field entered at upload in /admin. No streaming.priorities block: the scenario is fully procedural and ships without a single asset."
+}
