@@ -4,8 +4,17 @@
 # up when CONFIG.useKTX2 = true.
 #
 # Encoding policy:
-#   *normal* / *_n.{ext} / *_nrm*   -> UASTC (linear, preserves normals)
+#   *normal* / *_n.{ext} / *_nrm*   -> UASTC (linear, preserves normals) + zstd
 #   everything else                  -> ETC1S / BasisLZ (sRGB, smaller files)
+#
+#   UASTC must be supercompressed explicitly. ETC1S carries BasisLZ inside the
+#   payload, but UASTC is raw 8bpp blocks until zstd is applied, and KTX2 stores
+#   it verbatim. Without --zstd, earth_normal.ktx2 came out at 2.67 MB with
+#   supercompressionScheme = none — larger than the JPEG it replaces, and still
+#   deflating to 15% inside the ZIP, which is the giveaway: a supercompressed
+#   payload is close to incompressible. Sizes here are transmission only; UASTC
+#   is chosen over ETC1S for normals because it survives the GPU decode, and
+#   that VRAM footprint is unchanged either way.
 #
 # Robustness:
 #   - File format is detected by magic bytes, not extension. Files with the
@@ -21,6 +30,7 @@
 # Env vars:
 #   FORCE=1            overwrite existing .ktx2
 #   INCLUDE_SKYBOX=1   also convert assets/skybox/*
+#   ZSTD_LEVEL=n       zstd level for UASTC, 1-22 (default 18)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEX_DIR="$SCRIPT_DIR/assets/textures"
@@ -28,6 +38,7 @@ SKYBOX_DIR="$SCRIPT_DIR/assets/skybox"
 
 INCLUDE_SKYBOX="${INCLUDE_SKYBOX:-0}"
 FORCE="${FORCE:-0}"
+ZSTD_LEVEL="${ZSTD_LEVEL:-18}"
 
 # ---------- tool detection ----------
 TOOL=""
@@ -156,6 +167,7 @@ convert_one() {
             if [[ "$mode" == "uastc" ]]; then
                 ktx create \
                     --encode uastc --uastc-quality 2 \
+                    --zstd "$ZSTD_LEVEL" \
                     --assign-tf linear \
                     --format R8G8B8A8_UNORM \
                     --generate-mipmap \
@@ -173,6 +185,7 @@ convert_one() {
             if [[ "$mode" == "uastc" ]]; then
                 toktx --t2 \
                     --encode uastc --uastc_quality 2 \
+                    --zcmp "$ZSTD_LEVEL" \
                     --assign_oetf linear \
                     --genmipmap \
                     "$dst" "$input_for_ktx" 2>>"$FAIL_LOG" || rc=$?

@@ -28,8 +28,8 @@ measurable.** It also unblocks the platform's Phase 6 and the paper's loading-la
 | `ReleaseScenarios/Molecules.zip` | 22 KB |
 | `ReleaseScenarios/solar-system-scenario.zip` | 18.3 MB |
 | `ReleaseScenarios/test/Benchscene1_primitives.zip` | 2.3 KB |
-| `ReleaseScenarios/test/Benchscene2_complexmodel.zip` | 29.4 MB |
-| `ReleaseScenarios/test/Benchscene3_solarsystem.zip` | 10.5 MB |
+| `ReleaseScenarios/test/Benchscene2_complexmodel.zip` | 29.4 MB → **9.7 MB** after P0 |
+| `ReleaseScenarios/test/Benchscene3_solarsystem.zip` | 10.5 MB → 10.4 MB after P0 |
 
 Two things follow.
 
@@ -52,7 +52,8 @@ Neither is a ZIP defect. A ZIP is fine as a container; it is being used as the u
 ## Measured — what is actually inside the archives
 
 Read before optimising anything, because the intuitive answer is wrong for the biggest file.
-Entry sizes from the archives currently in `ReleaseScenarios/`:
+Entry sizes from the archives as they stood on 2026-08-11, **before P0**; conclusion 2 below
+turned out to be half wrong, see P0 for what was actually inside that GLB.
 
 | Entry | Raw | Stored | Ratio |
 |---|---|---|---|
@@ -93,7 +94,73 @@ move:
 
 The same reasoning rejects tar-based and custom formats. **The container is not the problem.**
 
-## P0 — Compress the content (~1 day, do this first)
+## P0 — Compress the content — ✅ done 2026-08-12
+
+Result: `complex_model.glb` **40 453 656 → 12 518 232 bytes (−69%)**, and
+`Benchscene2_complexmodel.zip` **29 352 066 → 9 710 408 bytes (−67%)**. Reproduced by
+[`TestScenarios/Benchscene2_complexmodel/compress_model.sh`](../TestScenarios/Benchscene2_complexmodel/compress_model.sh),
+which carries the full rationale. Archive re-validated through the platform's own
+`archive-validation.js`: PASS, no warnings.
+
+**Two things in the section below were wrong, and both changed what got built.**
+
+**1. It is not 38.58 MB of geometry.** `gltf-transform inspect` says ~17 MB of it is three
+2048×2048 **PNG textures embedded in the GLB** (baseColor 9.21, normal 7.19,
+metallicRoughness 0.59). Geometry was the other ~23 MB. So "compress the mesh" addressed
+barely half the file, and the textures were the cheaper, larger win.
+
+**2. Draco and meshopt would both have broken the scene.** The engine builds a bare
+`new GLTFLoader(manager)` (`WebEngineTS/src/engine/core/scenario/ScenarioAssets.ts:104`) and
+never calls `setDRACOLoader`, `setMeshoptDecoder` or `setKTX2Loader` — verified by grep across
+the whole engine source. Three.js ships all three extensions and each throws without its
+decoder wired up. This is the Basis-transcoder scar again, and this document walked into it
+while arguing against 7z for exactly that reason.
+
+What the engine *can* read with no decoder, and what was used instead:
+
+| | why it is safe |
+|---|---|
+| `KHR_mesh_quantization` | explicit `case` in GLTFLoader → `GLTFMeshQuantizationExtension`; the GPU just reads narrower types |
+| `EXT_texture_webp` | registered unconditionally in the GLTFLoader constructor, delegates to the normal texture path — **the browser decodes it** |
+
+Pipeline: `prune` (drops a dead `TEXCOORD_3`) → `dedup` → `quantize` → PNG-to-WebP.
+`weld` was measured and dropped: byte-identical output after `quantize`. Geometry is
+unchanged where it counts — vertex counts (65 532 / 65 532 / 65 532 / 56 305),
+`renderVertexCount` 1 310 430 and the bounding box all match the original, and indices fell
+`u32 → u16` on their own. `dedup` alone accounted for 4 MB, because the three UV sets are
+bit-identical duplicates.
+
+Texture fidelity, measured as PSNR / max channel error against the source PNGs:
+baseColor **41.6 dB / 14**, metallicRoughness **50.7 dB / 12**, normal **38.1 dB / 26**.
+The normal map is deliberately the weakest: lossy WebP is always YUV 4:2:0, so its error
+plateaus near 38 dB regardless of quality (q92/q96/q99 → 38.10/38.55/38.80 dB). Lossless
+would make it exact for **+3.57 MB — a 29% larger file** — and this material sets
+`KHR_materials_specular` `specularFactor = 0`, so the normal map shades diffuse light only,
+where a mean error of 2/255 does not show.
+
+**Still open:** nothing has rendered this in a browser. The extension analysis above is read
+from the engine bundle, not observed. Load `Benchscene2` once before republishing.
+
+### KTX2 supercompression — ✅ diagnosed and fixed, but it barely helps the ZIP
+
+The suspicion in §"Measured" was right about the cause and wrong about the payoff.
+
+Reading `supercompressionScheme` straight out of the KTX2 headers: every ETC1S texture had
+**BasisLZ**, and `earth_normal.ktx2` — the one UASTC file — had **none**. ETC1S carries its
+compression inside the payload; UASTC is raw blocks until zstd is applied, and
+`convert_to_ktx2.sh` never passed `--zstd`. Fixed in both encoder branches (`--zstd` for
+`ktx create`, `--zcmp` for `toktx`, level via `ZSTD_LEVEL`, default 18).
+
+`earth_normal.ktx2`: **2 796 752 → 373 479 bytes (−87%)** at rest, scheme now Zstandard, and
+the `.ktx2` entries now deflate to **99%** — the incompressibility this document predicted.
+
+**But `Benchscene3_solarsystem.zip` only went 10 476 770 → 10 434 788 (−42 KB, 0.4%).** The
+ZIP's deflate had already been recovering almost all of it: that entry was stored at ~400 KB
+before and 373 KB now. **The 7× win is real only outside the ZIP** — on the P1 manifest path,
+where assets are fetched individually, it is 2.67 MB versus 0.37 MB over the wire. As a
+container change it is worth ~nothing, which is the same lesson as §"Why not 7z".
+
+## P0 — original plan (~1 day, do this first)
 
 Independent of everything else, helps both the ZIP and the manifest path, and it is the fastest
 answer to "large scenarios load slowly".
@@ -236,10 +303,16 @@ faster.
 ## Order
 
 ```
-P0 ──► P1 ──► P3   compress content, then address it, then vary it
-P2                 independent, cheap, and it unblocks the platform's R7
-P4                 whenever
+P0 ✅ ─► P1 ──► P3   compress content, then address it, then vary it
+P2                   independent, cheap, and it unblocks the platform's R7
+P4                   whenever
 ```
+
+**P1 is next.** P0 left it one concrete gift and one concrete warning: the gift is that the
+`.ktx2` and WebP payloads are now genuinely incompressible, so per-asset delivery finally
+measures transfer rather than deflate; the warning is that anything the manifest points at
+must be readable by a bare `GLTFLoader` with no decoder wired up. Emitting LOD variants (P3)
+in Draco would fail for the same reason Draco failed here.
 
 P0 first because it is cheap, needs no other repository, and a manifest that streams
 needlessly-large assets is still streaming needlessly-large assets.
