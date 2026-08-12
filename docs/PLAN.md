@@ -177,7 +177,7 @@ unchanged.
 This is deliberately ahead of the manifest work. It is cheaper, it needs no other repository,
 and a manifest that streams needlessly-large assets is still streaming needlessly-large assets.
 
-## P1 — Emit `scenario.json` beside the ZIP — ⚠️ built 2026-08-12, not yet rendered
+## P1 — Emit `scenario.json` beside the ZIP — ✅ done 2026-08-12
 
 Shipped as [`build-manifest.mjs`](../build-manifest.mjs) — `npm run manifest -- --scenario X`,
 `npm run manifest:all`, `npm run manifest:verify`. Emits
@@ -230,9 +230,41 @@ against its location, sorting by priority and returning bytes. All five load:
 A plain static server being enough *is* the deployment story: `ReleaseScenarios/` behind any
 file server is a working origin, and no platform code was needed to prove it.
 
-**Still unmet:** nothing has been through `Application.loadScenarioFromManifest`, so no frame
-has been rendered and no `timeToFirstFrame` compared. That needs WebGL, and therefore a
-browser. Everything up to the point of handing bytes to the GPU now has coverage.
+**And it renders.** [`verify-render.mjs`](../verify-render.mjs) — `npm run
+manifest:verify-render` — serves `ReleaseScenarios/`, launches headless Edge with swiftshader,
+and loads every scenario **both ways in one session**: `loadScenarioFromManifest(url)` and
+`loadScenarioFromBuffer(zip)`. All five render from both paths and agree on scenario id, entry
+point and scene-graph size:
+
+| scenario | objects (manifest / zip) | agree |
+|---|---|---|
+| `Molecules` | 39 / 39 | ✅ |
+| `solar-system-scenario` | 75 / 75 | ✅ |
+| `Benchscene1_primitives` | 1004 / 1004 | ✅ |
+| `Benchscene2_complexmodel` | 14 / 14 | ✅ |
+| `Benchscene3_solarsystem` | 21 / 21 | ✅ |
+
+`timeToFirstFrame` is `-1` until a frame actually reaches the screen, so a run that reports a
+number has demonstrably rendered. Scene size is checked alongside it because an *empty* scene
+renders perfectly happily, and a manifest that silently delivered nothing would otherwise pass.
+
+**This also closes P0's open question.** `Benchscene2` — quantized geometry plus WebP textures —
+renders identically to its ZIP in a real browser, so `KHR_mesh_quantization` and
+`EXT_texture_webp` do work without a decoder. That had been read out of the engine bundle
+rather than observed.
+
+The harness needs the same import map virtual-lab's `frontend/src/index.html` carries
+(`WebEngineTS` → the standalone bundle): scenario modules are compiled with a bare specifier
+and loaded as blob URLs. Without it *both* paths fail identically at the entry-point import —
+a faithful reproduction of the platform, and a useful reminder that the ZIP path depends on it
+just as much.
+
+**No timing conclusions come out of this, by design.** Measured: `solar-system` run alone gave
+manifest 41.8 s / zip 48.7 s, while the same scenario inside a five-scenario run gave 33.5 s /
+2.4 s — whichever path runs second inherits the first one's compiled shaders, and software
+rasterisation dominates everything. An earlier reading of that 33.5 vs 2.4 as "the manifest
+path is 14× slower" was wrong, and re-running is what caught it. Loading-time numbers belong to
+the engine's harness on a real GPU, driven by URL flags.
 
 ### Original plan
 
@@ -402,16 +434,16 @@ faster.
 ## Order
 
 ```
-P0 ✅ ─► P1 ⚠️ ─► P3   compress content, then address it, then vary it
+P0 ✅ ─► P1 ✅ ─► P3   compress content, then address it, then vary it
 P2 ✅                  independent, cheap, and it unblocks the platform's R7
 P4                     whenever
 ```
 
-**P1 is built and loads; it has not rendered.** The manifests validate against the engine's own
-parser and every one of them loads through the engine's own `StreamingAssetSource` over HTTP.
-What is left is the GPU half — a browser, `loadScenarioFromManifest`, and a `timeToFirstFrame`
-worth comparing. Do that before P3: LOD variants are only worth emitting once a single-level
-manifest has drawn a frame.
+**P3 is next, and it is now unblocked.** A single-level manifest has drawn a frame in a browser,
+which was the precondition for varying the levels. Three verification layers exist to build on:
+`--verify` (the files are there), `--verify-fetch` (the engine can pull them), and
+`manifest:verify-render` (both paths render the same content). A LOD ladder should be able to
+show up in all three.
 
 **P1 is next.** P0 left it one concrete gift and one concrete warning: the gift is that the
 `.ktx2` and WebP payloads are now genuinely incompressible, so per-asset delivery finally

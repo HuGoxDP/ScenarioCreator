@@ -11,6 +11,7 @@
     "manifest:all": "node build-manifest.mjs --all",
     "manifest:verify": "node build-manifest.mjs --verify",
     "manifest:verify-fetch": "node build-manifest.mjs --verify-fetch",
+    "manifest:verify-render": "node verify-render.mjs",
     "clean:release": "powershell -NoProfile -Command \"if (Test-Path 'ReleaseScenarios') { Remove-Item -Recurse -Force 'ReleaseScenarios\\*' }\""
   },
   "keywords": [],
