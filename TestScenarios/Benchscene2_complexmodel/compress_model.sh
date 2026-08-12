@@ -106,8 +106,29 @@ if [[ -n "${LOD_RATIOS:-}" ]]; then
         $GT simplify "$WORK/welded.glb" "$WORK/s.glb" --ratio "0.${pct}" --error 0.05
         $GT dedup "$WORK/s.glb" "$WORK/d.glb"
         $GT quantize "$WORK/d.glb" "$WORK/q.glb"
-        $GT validate "$WORK/q.glb"
-        mv -f "$WORK/q.glb" "$DST"
+
+        # Scale the embedded textures to match. Without this a "coarse" level
+        # still carries full-resolution maps — at 25% that was 2.81 MB of WebP
+        # inside a 5.83 MB file, so nearly half of the coarsest rung was not
+        # coarse at all. A GLB embeds its images, so a level stays one file.
+        rm -rf "$WORK/u"; mkdir -p "$WORK/u"
+        $GT copy "$WORK/q.glb" "$WORK/u/m.gltf"
+        python - "$WORK/u" "$pct" <<'PY'
+import glob, os, sys
+from PIL import Image
+root, pct = sys.argv[1], int(sys.argv[2])
+for f in glob.glob(os.path.join(root, "*.webp")):
+    im = Image.open(f)
+    w, h = im.size
+    nw, nh = max(1, round(w * pct / 100)), max(1, round(h * pct / 100))
+    before = os.path.getsize(f)
+    im.resize((nw, nh), Image.LANCZOS).save(f, "WEBP", quality=90, method=6)
+    print(f"    {os.path.basename(f)}: {w}x{h} -> {nw}x{nh}, "
+          f"{before} -> {os.path.getsize(f)} bytes")
+PY
+        $GT copy "$WORK/u/m.gltf" "$WORK/final.glb"
+        $GT validate "$WORK/final.glb"
+        mv -f "$WORK/final.glb" "$DST"
         echo "    $(stat -c %s "$DST") bytes -> $DST"
     done
 

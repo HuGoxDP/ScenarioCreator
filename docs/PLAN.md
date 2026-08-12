@@ -445,11 +445,11 @@ ends each, all matching. Rendering is unaffected — both load paths still agree
 (`<stem>.<n>.<ext>`, ascending) turned out to generalise from texture sizes to mesh percentages
 without changing the manifest code. `Benchscene2` now publishes three levels:
 
-| level | triangles | bytes |
-|---|---|---|
-| 0 | 109 195 | 5 826 336 |
-| 1 | 218 402 | 8 111 952 |
-| 2 (the archive's own) | 436 810 | 12 518 232 |
+| level | triangles | textures | bytes | of full |
+|---|---|---|---|---|
+| 0 | 109 195 | 512² | 3 158 196 | 25% |
+| 1 | 218 402 | 1024² | 5 959 532 | 47% |
+| 2 (the archive's own) | 436 810 | 2048² | 12 518 232 | 100% |
 
 `extensionsRequired` stays `EXT_texture_webp` + `KHR_mesh_quantization` at every level, so a
 coarse mesh needs no decoder the full one did not — the constraint from P0 still holds.
@@ -466,9 +466,12 @@ Two things that are not obvious and cost time:
   14.54 MB, so `dedup` and `quantize` have to run again afterwards. The pipeline is
   weld → simplify → dedup → quantize.
 
-**Textures are carried over untouched**, so a coarse mesh still ships the full 2.81 MB of WebP.
-Combining a coarse mesh with a coarse texture set is a further step, and a bigger one, because
-it means a level is no longer one file.
+**The embedded textures are scaled with the mesh.** An earlier version of this section claimed
+pairing a coarse mesh with coarse textures would be "a bigger step, because a level is no longer
+one file" — that is wrong for a GLB, which embeds its images, so a level stays exactly one file.
+It mattered: with full-resolution maps, level 0 was 5 826 336 bytes of which **2.81 MB was
+texture**, so nearly half of the coarsest rung was not coarse. Scaling them to 512² brings that
+rung to 3 158 196 bytes — a quarter of full, which is what a bottom rung should be.
 
 ### Original plan
 
