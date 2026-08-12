@@ -1,0 +1,10 @@
+{
+  "id": "electric-circuits",
+  "name": "Електричні кола",
+  "description": "Чотири схеми — одна лампа, послідовне, паралельне та змішане з'єднання — які студент задає повзунками. Носії заряду рухаються швидше там, де більший струм, а таблиця показує R, U, I та P для кожного елемента.",
+  "category": "simulation",
+  "version": "1.0.0",
+  "contentVersion": 1,
+
+  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name. category is 'simulation': the circuit is re-solved live from the controls. The school subject (physics / Фізика) is a platform field entered at upload in /admin. No streaming.priorities block: fully procedural, no assets."
+}
