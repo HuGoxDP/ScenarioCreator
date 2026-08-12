@@ -40,7 +40,7 @@ export interface ElementInfo {
     symbol: string;         // "Fe"
     name: string;           // "Ферум" — Ukrainian, IUPAC-Ukrainian naming
     mass: number;           // standard atomic weight, e.g. 55.845
-    neutrons: number;       // most abundant isotope: round(mass) - z
+    neutrons: number;       // count in the most abundant isotope — literal, see below
     shells: number[];       // K, L, M, N occupancy, e.g. [2, 8, 14, 2]
     config: string;         // "1s² 2s² 2p⁶ 3s² 3p⁶ 3d⁶ 4s²"
     group: number;          // 1…18
@@ -55,6 +55,11 @@ export interface ElementInfo {
 Chromium (Z = 24) is `[Ar] 3d⁵ 4s¹` and copper (Z = 29) is `[Ar] 3d¹⁰ 4s¹`; a generated table is
 wrong precisely at the two elements a teacher points at. The same applies to `mass`: these are
 measured standard atomic weights, not `2 × z`.
+
+`neutrons` is literal for the same reason. The obvious shortcut — `round(mass) − z` — was checked
+against the table while building it and is wrong for **Ni, Cu, Zn, Ge, Se and Br**, where the
+abundance-weighted mass rounds past the dominant isotope. It gives the right answer often enough
+to look correct at a glance, which is what makes it worth naming here.
 
 **Check:** the sum of `shells` equals `z` for all 36 records. Worth a one-off assertion at load
 in development; a typo here is invisible on screen but wrong in the readout.

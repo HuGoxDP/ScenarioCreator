@@ -1,0 +1,10 @@
+{
+  "id": "atom-structure",
+  "name": "Будова атома",
+  "description": "Періодична таблиця, яку можна натиснути, і обраний елемент у вигляді ядра з електронними оболонками. Окремі повзунки для нейтронів та заряду показують різницю між ізотопом та йоном.",
+  "category": "education",
+  "version": "1.0.0",
+  "contentVersion": 1,
+
+  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name — the derived value would be 'atomstructure'. category is the engine's ScenarioCategory enum, not the school subject: the rubric (chemistry / Хімія) is a platform field entered at upload in /admin. No streaming.priorities block: the scenario is fully procedural and ships without a single asset, so there is nothing to prioritise."
+}

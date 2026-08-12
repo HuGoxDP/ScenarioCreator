@@ -1,0 +1,10 @@
+{
+  "id": "molecules",
+  "name": "Молекулярні моделі",
+  "description": "Кулестрижневі моделі 46 молекул, згруповані у сім розділів: прості речовини, неорганіка, форми VSEPR, органіка, кислоти, йони та солі. Клік по атому називає елемент.",
+  "category": "education",
+  "version": "1.0.0",
+  "contentVersion": 1,
+
+  "_comment": "Added so the scenario stops entering the catalogue as the Latin folder name 'Molecules' — without this file scenario-meta.mjs derives both id and name from the folder, which is right as a fallback and wrong as a shipped title. No streaming.priorities block: the scenario is fully procedural and has no assets to prioritise."
+}
