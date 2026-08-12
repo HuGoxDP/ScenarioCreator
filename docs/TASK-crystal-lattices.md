@@ -19,10 +19,10 @@ Scenarios/Crystals/
     └── helpers/
         ├── UIKit.ts             ← copy
         ├── CameraSetup.ts       ← copy
-        ├── LatticeBuilder.ts    ← basis × cells → instances; bonds; the cell wireframe
-        └── data/
-            ├── elements.ts      ← copy from Molecules (colours, radii, names)
-            └── structures.ts    ← the seven structures
+        └── LatticeBuilder.ts    ← basis × cells → instances; bonds; the cell wireframe
+    └── data/
+        ├── elements.ts          ← colours and the two radii per element
+        └── structures.ts        ← the eight structures, plus the guards
 ```
 
 ## 2. The structure table
@@ -42,21 +42,31 @@ export interface Structure {
 }
 ```
 
-Seven structures, chosen so all four bonding types and the three common metal packings appear:
+**Eight** structures, not seven, chosen so all four bonding types and all three common metal
+packings appear. The ρ column is not stored — it is **computed** (§4) and checked against these
+values, and the last column is what the check produced:
 
-| Structure | a (Å) | Type | CN | Z | ρ (г/см³) |
-|---|---|---|---|---|---|
-| NaCl | 5.64 | ГЦК, іонна | 6 | 4 | 2.16 |
-| CsCl | 4.11 | Проста кубічна, іонна | 8 | 1 | 3.99 |
-| Алмаз (C) | 3.57 | Кубічна алмазна | 4 | 8 | 3.51 |
-| Графіт (C) | a 2.46, c 6.71 | Гексагональна шарувата | 3 (у шарі) | 4 | 2.27 |
-| Мідь (Cu) | 3.61 | ГЦК | 12 | 4 | 8.96 |
-| Залізо α (Fe) | 2.87 | ОЦК | 8 | 2 | 7.87 |
-| Лід / CO₂ | — | Молекулярна | — | — | — |
+| Structure | a (Å) | Type | CN | Z | ρ handbook | ρ computed |
+|---|---|---|---|---|---|---|
+| NaCl | 5.640 | ГЦК, йонна | 6 | 4 | 2.16 | 2.164 |
+| CsCl | 4.110 | Проста кубічна, йонна | 8 | 1 | 3.99 | 4.027 |
+| Алмаз (C) | 3.567 | Кубічна алмазна | 4 | 8 | 3.51 | 3.516 |
+| Графіт (C) | a 2.460, c 6.708 | Гексагональна шарувата | 3 | 4 | 2.27 | 2.269 |
+| Мідь (Cu) | 3.615 | ГЦК | 12 | 4 | 8.96 | 8.935 |
+| Залізо α (Fe) | 2.866 | ОЦК | 8 | 2 | 7.87 | 7.878 |
+| Магній (Mg) | a 3.209, c 5.211 | ГЩУ | 12 | 2 | 1.738 | 1.737 |
+| Аргон (Ar) | 5.311 | ГЦК, молекулярна | 12 | 4 | 1.77 | 1.771 |
 
-The ρ column is not stored — it is **computed** (§4) and checked against these values. Graphite
-needs a second lattice parameter `c`; either give `Structure` an optional `c` or model graphite as
-an explicit basis in a hexagonal cell, and note which.
+Every one lands within 1 %.
+
+**Solid argon is the molecular crystal, not ice or CO₂.** Dry ice was tried first and its computed
+density comes out around 1.65 against a handbook 1.56 — a 6 % gap that would look like a bug in
+the very readout that exists to prove the arithmetic. Argon is a clean FCC of spherical atoms and
+lands on 1.771 against 1.77. Magnesium is the eighth, added so the third close packing (HCP) is
+present alongside FCC and BCC.
+
+`Structure` carries both `a` and `c`; for cubic cells they are equal. Lattice vectors come from
+`latticeVectors()`, which is also what makes the hexagonal cells work.
 
 ## 3. What is on screen
 
@@ -87,9 +97,16 @@ from the table above.
 factor of 2 or 4, `perCell` counts atoms where it should count formula units — that is the
 classic error, and it is exactly what this readout exists to expose.
 
-**Check:** the coordination number readout matches what is on screen. Turn on bonds, click a
-sodium ion, and count the chlorides touching it: six. For CsCl: eight. For copper: twelve. The
-readout must be verifiable by counting, or it is decoration.
+**Check:** the coordination number readout matches what is on screen. Turn on bonds and count what
+touches an ion: six for NaCl, eight for CsCl, twelve for copper. The readout must be verifiable by
+counting, or it is decoration.
+
+`validateStructures()` counts the same thing at load, over ±2 cells, for **every** basis atom of
+every structure — and this caught a real mistake. `latticeVectors()` builds a hexagonal cell with
+a₁ and a₂ **60°** apart, while the basis had been written for the usual 120° setting. Graphite came
+out with one neighbour instead of three and magnesium with ten instead of twelve, and both still
+looked entirely plausible on screen. The honeycomb partner and the HCP second atom belong at
+(1/3, 1/3) in a 60° cell, not (1/3, 2/3).
 
 ## 5. Ball-and-stick versus space-filling
 
