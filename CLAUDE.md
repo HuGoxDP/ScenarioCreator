@@ -212,3 +212,9 @@ this repository — a real GPU, or a platform that reads manifests.
 [`docs/TASK-rebuild-and-republish.md`](docs/TASK-rebuild-and-republish.md) — republish into
 virtual-lab, whose archives are stale imports from Google Drive and are now stale again against
 these builds. The upload itself is a manual `/admin` step.
+
+[`docs/TASK-catalogue-expansion.md`](docs/TASK-catalogue-expansion.md) — content, not pipeline:
+eight more production scenarios, taking `Scenarios/` from two to ten. All eight are procedural
+and ship without a single asset, which is what keeps them clear of rule 5 and of the LOD work
+still in flight. That file holds the constraints they share; one document per scenario holds the
+rest.
