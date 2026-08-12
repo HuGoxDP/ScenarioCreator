@@ -1,0 +1,10 @@
+{
+  "id": "orbital-mechanics",
+  "name": "Орбітальна механіка",
+  "description": "Запустіть тіло на заданій висоті з заданою швидкістю й подивіться, який конічний переріз вийде. Усі три закони Кеплера показано, а не заявлено: фокус, рівні площі за рівні часи та T² проти a³ разом із вісьмома справжніми планетами.",
+  "category": "simulation",
+  "version": "1.0.0",
+  "contentVersion": 1,
+
+  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name. category is 'simulation': the trajectory is integrated over time. The school subject (astronomy / Астрономія) is a platform field entered at upload in /admin, matching the rubric solar-system already uses. No streaming.priorities block: fully procedural, no assets."
+}

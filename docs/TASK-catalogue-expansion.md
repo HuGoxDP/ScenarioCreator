@@ -9,6 +9,11 @@ scenarios take the catalogue to ten.
 folder. This file holds what all eight share; each per-scenario document holds only what is
 specific to it, and assumes this one has been read.
 
+**Status: done.** All eight are built and `Scenarios/` holds ten. Each per-scenario document has
+been updated where the build deviated from it, with the reason; the engine limitations found on
+the way are in [`ENGINE-GAPS.md`](ENGINE-GAPS.md). What remains is the one thing this environment
+could not do — see §9.
+
 | # | Folder | id / doc | Subject | One line |
 |---|---|---|---|---|
 | 1 | `AtomStructure` | [`atom-structure`](TASK-atom-structure.md) | Хімія | Periodic table → Bohr model, isotopes and ions |
@@ -178,3 +183,29 @@ scenario's own document.
   `Scenarios/UIShowcase/`. By CLAUDE.md's own division — `TestScenarios/` is for feature demos —
   it belongs in `TestScenarios/`. It is not part of this batch either way; decide the root before
   someone builds it into the student-facing catalogue.
+
+## 9. What is still unverified, for whoever picks this up
+
+Every scenario passes all four layers: it builds, its ZIP carries a correct root manifest,
+`manifest:verify` finds nothing, `manifest:verify-render` loads it in headless Edge from **both**
+the ZIP and the streaming manifest and gets the same id, entry point and scene-graph size, and
+virtual-lab's own `archive-validation.js` accepts all ten archives with no warnings.
+
+Where a scenario rests on physics or data, that part was checked in Node before any of the scene
+existed — which is why several files (`Rays.ts`, `Slide.ts`, `GasSim.ts`, `Circuit.ts`,
+`Orbit.ts`, `structures.ts`) import nothing from the engine. Two real errors were caught that
+way: the hexagonal basis in `crystal-lattices` was written for a 120° cell while the lattice
+vectors are 60° apart, and the neutron counts in `atom-structure` cannot be derived from the
+rounded atomic mass.
+
+**Nobody has looked at any of them.** No screenshot was taken and no scenario was opened in a
+browser by a person. Every "**Check:**" in the per-scenario documents is an instruction for that
+person, and none of them has been performed. In particular, the layout numbers in each
+`_createUI` are guesses at a canvas whose reference resolution was never observed: panels may
+overlap, and text may run past its box.
+
+That is the next task, and it is small: serve `ReleaseScenarios/` and open each `/play/:id`.
+Three decisions were deferred *specifically* because they could not be seen and would have been
+guesses — world-space labels (§5 of this document, declined in optics, mechanics, circuits and
+crystals), the needle meters in `electric-circuits`, and the axis marks on the histogram in
+`gas-theory`. All three become easy once someone can look at a screenshot.
