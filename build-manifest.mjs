@@ -171,11 +171,39 @@ async function verifyByFetch() {
 
                 for (const asset of source.manifest.assets) {
                     const bytes = await source.readBytes(asset.path);
-                    const expected = asset.lods[0].bytes;
-                    if (expected !== undefined && bytes.length !== expected) {
-                        console.log(`  SIZE ${asset.path}: fetched ${bytes.length}, manifest says ${expected}`);
+                    // Which rung the engine picks by default is its business —
+                    // budget, LOD bias, whatever it decides later. What has to
+                    // hold is that the bytes it returns are one of the levels
+                    // this manifest actually declares.
+                    const declared = asset.lods.map((l) => l.bytes).filter((b) => b !== undefined);
+                    if (declared.length > 0 && !declared.includes(bytes.length)) {
+                        console.log(
+                            `  SIZE ${asset.path}: fetched ${bytes.length}, ` +
+                            `no declared level matches (${declared.join(", ")})`
+                        );
                         local += 1;
                     }
+                }
+
+                // A ladder is only worth emitting if the engine can be pointed
+                // at a specific rung. Ask for the coarsest and the finest and
+                // check the bytes that come back are the ones the manifest
+                // promised for each — a ladder that always yields the same file
+                // would validate perfectly and stream nothing.
+                const laddered = source.manifest.assets.filter((a) => a.lods.length > 1);
+                for (const asset of laddered) {
+                    for (const level of [0, asset.lods.length - 1]) {
+                        source.setLodLevel(asset.path, level);
+                        const bytes = await source.readBytes(asset.path);
+                        if (bytes.length !== asset.lods[level].bytes) {
+                            console.log(
+                                `  LOD ${asset.path} @${level}: got ${bytes.length}, ` +
+                                `manifest says ${asset.lods[level].bytes}`
+                            );
+                            local += 1;
+                        }
+                    }
+                    source.clearLodLevel(asset.path);
                 }
 
                 const byPriority = ["critical", "high", "low", "lazy"]
@@ -188,6 +216,7 @@ async function verifyByFetch() {
                     `${local ? "FAIL" : "ok  "} ${urlPath}  ` +
                     `id=${source.manifest.id}  scripts=${source.listScripts().length}  ` +
                     `assets=${source.manifest.assets.length} (${byPriority})  ` +
+                    `ladders=${laddered.length}  ` +
                     `identity=${source.assetEntries().length}  ` +
                     `fetched=${fmt(source.bytesFetched)} in ${source.requestCount} requests`
                 );
@@ -346,6 +375,37 @@ function matchPriority(relPath, rules) {
     return "low";
 }
 
+/**
+ * Coarser levels for one asset, ascending, from `<scenario>/lods/`.
+ *
+ * `convert_to_ktx2.sh LOD_SIZES=512,1024` writes `textures/earth.512.ktx2`
+ * beside `textures/earth.1024.ktx2`, deliberately outside `assets/` so
+ * build-package.mjs never copies them into the archive. Variants in a ZIP make
+ * it bigger and nothing faster — the client has to take all of them to pick one.
+ * A manifest can address them individually, which is the entire reason this
+ * ladder is worth generating at all.
+ *
+ * Only same-extension variants count. A `.ktx2` asset with a `.jpg` level would
+ * be addressed by a path whose extension no longer describes the bytes behind
+ * some of its levels.
+ */
+function findLadder(scenarioDir, rel) {
+    const ext = path.extname(rel);
+    const dir = path.join(scenarioDir, "lods", path.dirname(rel));
+    if (!existsSync(dir)) return [];
+
+    const stem = path.basename(rel, ext);
+    const pattern = new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.(\\d+)\\${ext}$`);
+
+    return readdirSync(dir)
+        .map((name) => {
+            const m = pattern.exec(name);
+            return m ? { size: Number(m[1]), file: path.join(dir, name) } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.size - b.size);
+}
+
 /** Writes bytes into the shared store under their own hash. Returns the relative url. */
 function storeObject(bytes, ext, stats) {
     const hash = createHash("sha256").update(bytes).digest("hex");
@@ -401,6 +461,7 @@ function emitManifest(scenarioName, scenarioDir, kind) {
         const scripts = [];
         const assets = [];
         const counts = { critical: 0, high: 0, low: 0, lazy: 0 };
+        let lodCount = 0;
 
         const scriptsDir = path.join(tempDir, "scripts");
         if (existsSync(scriptsDir)) {
@@ -426,18 +487,36 @@ function emitManifest(scenarioName, scenarioDir, kind) {
                 const { hash, objectPath } = storeObject(bytes, path.extname(abs), stats);
                 const priority = matchPriority(rel, priorities);
                 counts[priority] = (counts[priority] ?? 0) + 1;
+
+                // Coarser levels first, the archive's own copy last: the engine
+                // reads level 0 as the coarsest and picks upward against its
+                // budget. The full-size encode is never duplicated into lods/ —
+                // it is already in the ZIP, and re-encoding it would be a second
+                // answer to the same question.
+                const lods = [];
+                for (const ladder of findLadder(scenarioDir, rel)) {
+                    const lodBytes = readFileSync(ladder.file);
+                    const stored = storeObject(lodBytes, path.extname(ladder.file), stats);
+                    lods.push({
+                        level: lods.length,
+                        url: path.relative(outRoot, stored.objectPath).replace(/\\/g, "/"),
+                        bytes: lodBytes.length,
+                        hash: `sha256-${stored.hash}`,
+                    });
+                    lodCount += 1;
+                }
+                lods.push({
+                    level: lods.length,
+                    url: path.relative(outRoot, objectPath).replace(/\\/g, "/"),
+                    bytes: bytes.length,
+                    hash: `sha256-${hash}`,
+                });
+
                 assets.push({
                     path: `assets/${rel}`,
                     guid: assetGuid(meta.id, `assets/${rel}`),
                     priority,
-                    // One level for now. P3 turns convert_to_ktx2.sh into a
-                    // ladder and this becomes the list it was shaped for.
-                    lods: [{
-                        level: 0,
-                        url: path.relative(outRoot, objectPath).replace(/\\/g, "/"),
-                        bytes: bytes.length,
-                        hash: `sha256-${hash}`,
-                    }],
+                    lods,
                 });
             }
         }
@@ -469,6 +548,10 @@ function emitManifest(scenarioName, scenarioDir, kind) {
             .map(([p, n]) => `${n} ${p}`)
             .join(", ");
         console.log(`  scripts ${scripts.length}, assets ${assets.length} (${priorityLine || "none"})`);
+        if (lodCount > 0) {
+            const laddered = assets.filter((a) => a.lods.length > 1).length;
+            console.log(`  lods: ${laddered} assets carry a ladder, ${lodCount} coarser levels`);
+        }
         console.log(`  objects: ${stats.written} written (${fmt(stats.writtenBytes)}), ` +
             `${stats.deduped} already present (${fmt(stats.dedupedBytes)} not stored again)`);
         console.log(`[ok] ${outPath}`);

@@ -404,7 +404,42 @@ fix is here.
 **Done when:** no archive reports `template.*` or `0.0.1-template`, and rebuilding a scenario
 twice produces the same guids.
 
-## P3 — LOD variants (~2–3 days, after P1)
+## P3 — LOD variants — ⚠️ textures done 2026-08-12, VRAM claim unmeasured
+
+`convert_to_ktx2.sh` now takes `LOD_SIZES=512,1024` and emits a ladder;
+`build-manifest.mjs` picks it up and writes ascending `lods[]`. `Benchscene3` publishes
+**three levels for each of its 12 KTX2 textures** — for `earth.ktx2`, 30 121 → 79 495 →
+224 059 bytes.
+
+**The variants live in `<scenario>/lods/`, outside `assets/`.** `build-package.mjs` copies
+`assets/` verbatim, so anything put there would land in the ZIP and make it bigger while making
+nothing faster — the client would take every level to use one. That is the same defect as the
+dual-format archive, and the reason the ladder was worth generating only after a manifest
+existed to address it. `Benchscene3_solarsystem.zip` is unchanged at 10.4 MB with the whole
+ladder in place; the 1.4 MB of coarser levels reaches clients only through the manifest.
+
+Levels are same-extension only. A `.ktx2` asset with a `.jpg` rung would be addressed by a path
+whose extension stops describing the bytes behind some of its levels. The full-size encode is
+never copied into `lods/` — it is already in the archive and is simply listed as the top rung.
+
+**Verified that the rungs are selectable, not merely well-formed.** `--verify-fetch` now asks
+the engine for level 0 and the top level of every laddered asset via `setLodLevel` and checks
+the bytes that come back are exactly what the manifest promised for that level. A ladder that
+always returned the same file would validate perfectly and stream nothing. 12 ladders, both
+ends each, all matching. Rendering is unaffected — both load paths still agree.
+
+**Not done, and the done-criterion below is only half met:**
+
+- **Peak texture VRAM against a budget has not been measured.** The criterion asks that
+  `TextureStreaming` measurably lower it; the only GPU available here is swiftshader, where the
+  number would mean nothing. This needs the engine's harness on real hardware.
+- **The dual-format archive has not been retired.** `Benchscene3` still ships `.jpg` *and*
+  `.ktx2` in the ZIP. Removing it is now *possible* — the A/B it exists for is expressible as
+  two manifest levels — but it changes what the ZIP contains, and the ZIP is still the only
+  thing the platform can consume. Worth doing deliberately, after the platform reads manifests.
+- **Mesh decimation** remains untouched, as the original plan intended: textures first.
+
+### Original plan
 
 Only worth doing once the manifest exists — variants inside a ZIP make it bigger and nothing
 faster.
@@ -434,16 +469,16 @@ faster.
 ## Order
 
 ```
-P0 ✅ ─► P1 ✅ ─► P3   compress content, then address it, then vary it
-P2 ✅                  independent, cheap, and it unblocks the platform's R7
-P4                     whenever
+P0 ✅ ─► P1 ✅ ─► P3 ⚠️   compress content, then address it, then vary it
+P2 ✅                     independent, cheap, and it unblocks the platform's R7
+P4                        whenever
 ```
 
-**P3 is next, and it is now unblocked.** A single-level manifest has drawn a frame in a browser,
-which was the precondition for varying the levels. Three verification layers exist to build on:
-`--verify` (the files are there), `--verify-fetch` (the engine can pull them), and
-`manifest:verify-render` (both paths render the same content). A LOD ladder should be able to
-show up in all three.
+**What is left is not buildable here.** Every remaining open item needs something this
+repository does not have: a real GPU to measure peak VRAM against a budget, or a platform that
+reads manifests before the dual-format archive can be retired. The four verification layers —
+`--verify`, `--verify-fetch`, `manifest:verify-render`, and the LOD selection check inside
+`--verify-fetch` — are the handover surface for whoever picks that up.
 
 **P1 is next.** P0 left it one concrete gift and one concrete warning: the gift is that the
 `.ktx2` and WebP payloads are now genuinely incompressible, so per-asset delivery finally
