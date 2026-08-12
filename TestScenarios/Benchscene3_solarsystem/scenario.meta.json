@@ -2,7 +2,9 @@
   "id": "benchscene3-solarsystem",
   "name": "Benchscene 3 — Solar System",
   "description": "Sun, six orbiting planets, a moon and an equirectangular skybox. Deterministic composition: initial orbital angles are fixed, so every run renders the same frame.",
-  "version": 1,
+  "category": "test",
+  "version": "1.0.0",
+  "contentVersion": 1,
 
   "_comment": "Read by build-manifest.mjs. Priorities are globs against the path below assets/, first match wins, and they fall through to the built-in ladder in build-manifest.mjs when nothing matches. The default ladder is wrong for this scene: it keys on file type, and a scene made of nothing but textures comes out as one undifferentiated 'low' block, which measures nothing. Everything here is on screen in the first frame, so the honest distinction is visual weight rather than visibility. The skybox fills the frame and its absence is the most obvious. The sun is the centre and the largest body, and Earth is the one the camera frames and the only planet carrying normal and night maps, so their albedo is what the eye lands on. The remaining planets are small and distant enough to pop in late without the scene looking broken, and Earth's own normal/night maps are refinements over an albedo that already reads correctly. Both formats of each texture are listed because the archive still ships .jpg and .ktx2 side by side; P3 retires that in favour of LOD levels.",
 

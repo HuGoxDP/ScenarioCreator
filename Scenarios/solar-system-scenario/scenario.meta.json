@@ -1,0 +1,10 @@
+{
+  "id": "solar-system",
+  "name": "Сонячна Система",
+  "description": "Сонце, планети на орбітах і Місяць, із панорамним зоряним небом. Керування камерою — орбіта, наближення, пауза симуляції.",
+  "category": "education",
+  "version": "3.5.0",
+  "contentVersion": 1,
+
+  "_comment": "id is deliberately 'solar-system' rather than the folder name: that is the slug this scenario already has in virtual-lab's catalogue, and CLAUDE.md is explicit that the mismatch between manifest id and catalogue id is to be fixed here rather than by making the platform tolerate it. version tracks the '3.5' the scenario source has called itself since before this file existed. No streaming.priorities block: the built-in ladder already produces a real spread here, because this scenario has .glb models to mark 'high' and a skybox to mark 'critical'."
+}

@@ -300,7 +300,49 @@ the two.
 `ReleaseScenarios/` that the platform uploads wholesale, or publishing straight into the
 platform through an API that does not exist yet. The first is less work and blocks nothing.
 
-## P2 — Real manifest metadata (~0.5 day)
+## P2 — Real manifest metadata — ✅ done 2026-08-12
+
+**No archive reports `template.*` any more**, and the platform validator passes all five with
+**zero warnings**.
+
+| archive | id | version | engineVersion | asset guids |
+|---|---|---|---|---|
+| `Molecules` | `molecules` | 1.0.0 | `0.1.0-local.1786479071411` | 0 |
+| `solar-system-scenario` | **`solar-system`** | 3.5.0 | ″ | 18 |
+| `Benchscene1_primitives` | `benchscene1-primitives` | 1.0.0 | ″ | 0 |
+| `Benchscene2_complexmodel` | `benchscene2-complexmodel` | 1.0.0 | ″ | 1 |
+| `Benchscene3_solarsystem` | `benchscene3-solarsystem` | 1.0.0 | ″ | 24 |
+
+Metadata comes from an optional `<scenario>/scenario.meta.json` — the same file P1 already
+reads, which is why identity was put there rather than in a streaming-only side file. Two
+choices worth stating:
+
+- **The fallback is derived, not fictional.** No meta file means id = slugified folder name,
+  name = folder name, version = `1.0.0`. Fields nobody has stated — `description`, `author` —
+  are **omitted** rather than filled with a plausible invention, because a wrong author in a
+  catalogue is worse than a missing one. That is why three scenarios above have no meta file
+  and still report cleanly.
+- **`solar-system-scenario` declares `id: "solar-system"`**, the slug it already has in the
+  platform's catalogue. `CLAUDE.md` is explicit that this mismatch is to be fixed here rather
+  than by making the platform tolerate it, so it is fixed here.
+
+**Identity is shared, not duplicated.** [`scenario-meta.mjs`](../scenario-meta.mjs) is imported
+by both builders, because two things must agree across the ZIP and the manifest or the two
+artifacts describe different content: the scenario **id**, and the asset **guid** — a scene
+serialized while running from a ZIP has to keep resolving when the same scenario is later
+served from a manifest. Verified rather than assumed: **all 43 guids are identical between the
+two artifacts, and identical again after a rebuild.** They are derived from
+`sha256(id + "\0" + path)` and never from content, so re-encoding a texture does not move one.
+
+**One ordering fix came with it.** The ZIP manifest is now written *after* the assets are
+staged rather than before. `--ktx2` generates textures during that step, so an asset list built
+earlier omitted exactly the files that run existed to produce.
+
+**Left open:** `CLAUDE.md`'s "Manifest metadata is currently a placeholder" section now
+describes something that is no longer true, and its line numbers for `build-package.mjs` were
+already stale. Not edited here — it has uncommitted changes.
+
+### Original plan
 
 `build-package.mjs` hard-codes placeholders (verified at lines ~298–314):
 
@@ -361,7 +403,7 @@ faster.
 
 ```
 P0 ✅ ─► P1 ⚠️ ─► P3   compress content, then address it, then vary it
-P2                     independent, cheap, and it unblocks the platform's R7
+P2 ✅                  independent, cheap, and it unblocks the platform's R7
 P4                     whenever
 ```
 

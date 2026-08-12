@@ -54,6 +54,8 @@ import path from "node:path";
 
 import { parseStreamingManifest, StreamingAssetSource, toScenarioManifest } from "WebEngineTS";
 
+import { assetGuid, readScenarioMeta } from "./scenario-meta.mjs";
+
 const rootDir = process.cwd();
 const scenariosRoot = path.join(rootDir, "Scenarios");
 const testScenariosRoot = path.join(rootDir, "TestScenarios");
@@ -344,52 +346,6 @@ function matchPriority(relPath, rules) {
     return "low";
 }
 
-/**
- * Optional per-scenario metadata: `<scenario>/scenario.meta.json`.
- *
- * Absent is the normal case and everything falls back to a derived default, so
- * no scenario has to be given one before this tool works on it. The same file is
- * where P2 should read real id/name/version from, which is why identity lives
- * here rather than in a streaming-only side file.
- */
-function readMeta(scenarioDir, scenarioName) {
-    const metaPath = path.join(scenarioDir, "scenario.meta.json");
-    const meta = existsSync(metaPath) ? JSON.parse(readFileSync(metaPath, "utf8")) : {};
-
-    const slug = scenarioName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const priorities = meta.streaming?.priorities
-        ? Object.entries(meta.streaming.priorities)
-        : [];
-
-    return {
-        id: typeof meta.id === "string" ? meta.id : slug,
-        name: typeof meta.name === "string" ? meta.name : scenarioName,
-        description: typeof meta.description === "string" ? meta.description : undefined,
-        // The engine's schema types `version` as a number, unlike the ZIP
-        // manifest's string. Not an oversight to reconcile — the ZIP records a
-        // human release version, this records which build of the content the
-        // URLs point at.
-        version: typeof meta.version === "number" ? meta.version : 1,
-        // Author rules first, then the built-in ladder as the fallback tail.
-        priorities: [...priorities, ...DEFAULT_PRIORITIES],
-        hasMeta: existsSync(metaPath),
-    };
-}
-
-/**
- * Stable per-asset identity.
- *
- * Derived from the scenario id and the asset's path, never from its bytes: a
- * guid has to survive re-encoding a texture, or a serialized scene stops
- * resolving the moment the asset is rebuilt. The engine drops assets without a
- * guid rather than minting one, for the same reason — an id that does not
- * survive a reload is worse than none. Renaming an asset does change its guid,
- * which is the honest limit of deriving identity from a path.
- */
-function assetGuid(scenarioId, assetPath) {
-    return createHash("sha256").update(`${scenarioId}\u0000${assetPath}`).digest("hex").slice(0, 32);
-}
-
 /** Writes bytes into the shared store under their own hash. Returns the relative url. */
 function storeObject(bytes, ext, stats) {
     const hash = createHash("sha256").update(bytes).digest("hex");
@@ -421,9 +377,11 @@ function emitManifest(scenarioName, scenarioDir, kind) {
         );
     }
 
-    const meta = readMeta(scenarioDir, scenarioName);
+    const meta = readScenarioMeta(scenarioDir, scenarioName);
+    // Author rules first, then the built-in ladder as the fallback tail.
+    const priorities = [...meta.priorities, ...DEFAULT_PRIORITIES];
     console.log(`\n[manifest] ${scenarioName} → id "${meta.id}"` +
-        (meta.hasMeta ? "" : "  (no scenario.meta.json — using derived defaults)"));
+        (meta.present ? "" : "  (no scenario.meta.json — using derived defaults)"));
 
     const tempDir = mkdtempSync(path.join(tmpdir(), "scenario-manifest-"));
     const stats = { written: 0, writtenBytes: 0, deduped: 0, dedupedBytes: 0 };
@@ -466,7 +424,7 @@ function emitManifest(scenarioName, scenarioDir, kind) {
                 const rel = path.relative(assetsDir, abs).replace(/\\/g, "/");
                 const bytes = readFileSync(abs);
                 const { hash, objectPath } = storeObject(bytes, path.extname(abs), stats);
-                const priority = matchPriority(rel, meta.priorities);
+                const priority = matchPriority(rel, priorities);
                 counts[priority] = (counts[priority] ?? 0) + 1;
                 assets.push({
                     path: `assets/${rel}`,
@@ -489,7 +447,7 @@ function emitManifest(scenarioName, scenarioDir, kind) {
             id: meta.id,
             name: meta.name,
             ...(meta.description ? { description: meta.description } : {}),
-            version: meta.version,
+            version: meta.contentVersion,
             entry: `scripts/${zipManifest.entryPoint}`,
             scripts,
             assets,

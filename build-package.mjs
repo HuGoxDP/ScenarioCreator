@@ -2,6 +2,8 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
+import { assetGuid, installedEngineVersion, readScenarioMeta } from "./scenario-meta.mjs";
+
 const rootDir = process.cwd();
 const scenariosRoot = path.join(rootDir, "Scenarios");
 const releaseRoot = path.join(rootDir, "ReleaseScenarios");
@@ -252,26 +254,6 @@ function buildScenario(scenarioDir, ktx2) {
         .map((filePath) => `scripts/${path.relative(compiledScriptsDir, filePath).replace(/\\/g, "/")}`)
         .sort();
 
-    const manifest = {
-        manifestVersion: "1.0",
-        id: `template.${scenarioName.toLowerCase().replace(/[^a-z0-9]+/g, ".")}`,
-        name: `Template ${scenarioName}`,
-        version: "0.0.1-template",
-        description: "Template description: replace with scenario details.",
-        category: "template",
-        author: {
-            name: "Template Author",
-            email: "template.author@example.com",
-        },
-        engineVersion: "0.0.0-template",
-        entryPoint,
-        metadata: {
-            scripts: scriptEntries,
-        },
-    };
-
-    writeFileSync(path.join(distDir, "manifest.json"), `${JSON.stringify(manifest, null, 4)}\n`, "utf8");
-
     if (ktx2) {
         runKtx2Conversion(scenarioDir);
     }
@@ -279,6 +261,43 @@ function buildScenario(scenarioDir, ktx2) {
     if (existsSync(assetsDir)) {
         cpSync(assetsDir, path.join(distDir, "assets"), { recursive: true });
     }
+
+    // The manifest is written after the assets are staged, not before: --ktx2
+    // generates textures during the step above, and an asset list built earlier
+    // would omit exactly the files that run was for.
+    const meta = readScenarioMeta(scenarioDir, scenarioName);
+    const distAssetsDir = path.join(distDir, "assets");
+    const assetEntries = existsSync(distAssetsDir)
+        ? readdirSync(distAssetsDir, { recursive: true, withFileTypes: true })
+            .filter((entry) => entry.isFile())
+            .map((entry) => {
+                const rel = path.relative(distAssetsDir, path.join(entry.parentPath, entry.name));
+                return `assets/${rel.replace(/\\/g, "/")}`;
+            })
+            .sort()
+            .map((assetPath) => ({ guid: assetGuid(meta.id, assetPath), path: assetPath }))
+        : [];
+
+    const manifest = {
+        manifestVersion: "1.0",
+        id: meta.id,
+        name: meta.name,
+        version: meta.version,
+        ...(meta.description ? { description: meta.description } : {}),
+        ...(meta.category ? { category: meta.category } : {}),
+        ...(meta.author ? { author: meta.author } : {}),
+        engineVersion: installedEngineVersion(rootDir),
+        entryPoint,
+        // Stable identities, so a scene serialized while this ran from a ZIP
+        // still resolves when the same scenario is served from a manifest —
+        // build-manifest.mjs derives them the same way, from the same id.
+        assets: assetEntries,
+        metadata: {
+            scripts: scriptEntries,
+        },
+    };
+
+    writeFileSync(path.join(distDir, "manifest.json"), `${JSON.stringify(manifest, null, 4)}\n`, "utf8");
 
     rmSync(zipPath, { force: true });
 
