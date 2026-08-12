@@ -456,13 +456,37 @@ faster.
 **Done when:** a texture-heavy scenario publishes three levels per texture, and the engine's
 `TextureStreaming` measurably lowers peak texture VRAM against a budget.
 
-## P4 — Housekeeping, any time
+## P4 — Housekeeping — ✅ done 2026-08-12
 
-- The `--ktx2` conversion silently degrades to "packaging existing textures only" if the shell
-  script fails (verified at ~line 266). That is right for a routine build and wrong for a
-  release; consider a `--strict` that fails instead.
-- Storing the already-compressed entries uncompressed is worth measuring, but see §"Measured"
-  below first — the obvious version of this idea is wrong for the file that matters most.
+**`--strict` exists.** `node build-package.mjs --scenario X --ktx2 --strict` turns a failed
+`convert_to_ktx2.sh` into a build failure instead of a warning. Verified both ways against a
+script made to exit non-zero: without the flag it warns, packages, and exits 0; with it the
+build stops and exits 1. The default stays permissive because that is right for a routine
+build — but `--ktx2` returning success while producing no `.ktx2` at all is exactly how an
+archive with a stale or missing encode reaches a student, and the exit code gives no hint.
+
+**Storing already-compressed entries uncompressed: measured, and decided against.** Across all
+five archives as they now stand:
+
+| archive | raw | stored | deflate saves | in entries deflate cannot help |
+|---|---|---|---|---|
+| `Molecules` | 68 996 | 20 045 | 48 951 | 0 |
+| `solar-system-scenario` | 27 859 372 | 18 251 778 | **9 607 594** | 4 228 070 |
+| `Benchscene1_primitives` | 4 643 | 1 701 | 2 942 | 0 |
+| `Benchscene2_complexmodel` | 12 521 338 | 9 709 362 | **2 811 976** | 0 |
+| `Benchscene3_solarsystem` | 11 296 035 | 10 428 503 | 867 532 | 8 068 749 |
+
+Deflate saves **13.3 MB** across the catalogue, so doing this wholesale would cost 13.3 MB —
+the warning in §"Measured" still holds. It holds even after P0: the compressed `complex_model.glb`
+still deflates by 2.8 MB, and `Benchscene2` has *no* entry deflate cannot help.
+
+Per-entry it is a different question, and a smaller one: 12.3 MB of content sits in entries
+where deflate buys under 2% — the JPEGs, and the now properly supercompressed `.ktx2`. Storing
+just those uncompressed would cost roughly nothing and save decompression time on a student
+laptop. **Not implemented, deliberately:** `tar -a -c -f` has no per-entry compression control,
+so it would mean replacing the ZIP writer, and the saving is CPU-only and unmeasured. The
+content this would help is also the content already moving to the manifest path, where entries
+are not deflated at all. Revisit only with a measured decompression cost to point at.
 
 ---
 
@@ -471,7 +495,7 @@ faster.
 ```
 P0 ✅ ─► P1 ✅ ─► P3 ⚠️   compress content, then address it, then vary it
 P2 ✅                     independent, cheap, and it unblocks the platform's R7
-P4                        whenever
+P4 ✅                     whenever
 ```
 
 **What is left is not buildable here.** Every remaining open item needs something this

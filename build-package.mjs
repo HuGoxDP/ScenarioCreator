@@ -29,6 +29,7 @@ function parseArgs() {
     let listOnly = false;
     let buildAll = false;
     let ktx2 = false;
+    let strict = false;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -42,6 +43,10 @@ function parseArgs() {
         }
         if (arg === "--ktx2") {
             ktx2 = true;
+            continue;
+        }
+        if (arg === "--strict") {
+            strict = true;
             continue;
         }
         if (arg === "--scenario") {
@@ -63,6 +68,7 @@ function parseArgs() {
         buildAll,
         selected,
         ktx2,
+        strict,
     };
 }
 
@@ -213,6 +219,12 @@ function findTar() {
     return "tar.exe";
 }
 
+/**
+ * Set from --strict. Module-level rather than threaded through buildScenario,
+ * because the failure policy is a property of the run, not of any one scenario.
+ */
+let strictKtx2 = false;
+
 function runKtx2Conversion(scenarioDir) {
     const script = path.join(scenarioDir, "convert_to_ktx2.sh");
     const scenarioName = path.basename(scenarioDir);
@@ -228,11 +240,20 @@ function runKtx2Conversion(scenarioDir) {
             env: { ...process.env, INCLUDE_SKYBOX: process.env.INCLUDE_SKYBOX ?? "0" },
         });
     } catch (err) {
-        console.warn(
-            `  [ktx2] conversion failed — packaging existing textures only. ` +
+        const detail =
             `Needs Git Bash + KTX-Software on PATH; set BASH=<path-to-git-bash.exe> ` +
-            `if not auto-found. ${err?.message ?? err}`
-        );
+            `if not auto-found. ${err?.message ?? err}`;
+        if (strictKtx2) {
+            // Degrading to "packaging existing textures only" is right for a
+            // routine build and wrong for a release. --ktx2 returning success
+            // while producing no .ktx2 at all is exactly how an archive with a
+            // stale or missing encode reaches a student, and the exit code gives
+            // no hint at all. --strict turns that into a stop.
+            throw new Error(
+                `[ktx2] ${scenarioName}: conversion failed and --strict is set. ${detail}`
+            );
+        }
+        console.warn(`  [ktx2] conversion failed — packaging existing textures only. ${detail}`);
     }
 }
 
@@ -322,6 +343,7 @@ if (!existsSync(scenariosRoot)) {
 mkdirSync(releaseRoot, { recursive: true });
 
 const options = parseArgs();
+strictKtx2 = options.strict;
 const scenarioMap = getScenarioMap();
 const availableNames = [...scenarioMap.keys()].sort();
 
