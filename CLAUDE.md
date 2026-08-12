@@ -40,6 +40,13 @@ scenario compiles here but fails at runtime in the platform, suspect that gap fi
 2. **No engine code here.** Rendering, math and scenario-runtime concerns belong in WebEngineTS.
 3. **No platform code here.** Catalog, auth and storage belong in virtual-lab.
 4. **Exactly one `ScenarioBehaviour` subclass per scenario.** See "Entry point detection" below.
+5. **No asset format that needs a decoder the engine never wires up.** `ScenarioAssets` builds a
+   bare `new GLTFLoader(manager)` and never calls `setDRACOLoader`, `setMeshoptDecoder` or
+   `setKTX2Loader`. Three.js ships all three extensions and each throws without its decoder, so a
+   Draco- or meshopt-compressed mesh, or KTX2 *inside* a GLB, fails at load. What is safe, and
+   what the compressed assets here use: **`KHR_mesh_quantization`** (the GPU reads narrower
+   types) and **`EXT_texture_webp`** (registered unconditionally; the browser decodes it).
+   Loose `.ktx2` files are fine — that is the Basis transcoder path, not `KHR_texture_basisu`.
 
 ## How the build works
 
@@ -55,31 +62,33 @@ scenario compiles here but fails at runtime in the platform, suspect that gap fi
    `class X extends ScenarioBehaviour`. **Exactly one match is required**; zero or several is a
    hard build failure rather than an ambiguous guess. The detected `.ts` path becomes the `.js`
    `entryPoint`, relative to `scripts/`.
-4. **Manifest** — `<scenario>/dist/manifest.json` is generated (see the warning below).
+4. **Manifest** — `<scenario>/dist/manifest.json` is generated (see below).
 5. **KTX2** (only with `--ktx2`) — runs the scenario's `convert_to_ktx2.sh`, producing `.ktx2`
    next to the originals so **both** formats ship in one archive.
 6. **Assets** — `<scenario>/assets` is copied verbatim if present.
 7. **Package** — `tar.exe -a -c -f` zips the `dist` contents, then `dist/` is deleted.
 
-### Manifest metadata is currently a placeholder
+### Manifest metadata comes from `scenario.meta.json`
 
-`build-package.mjs:240-256` hard-codes template values into every manifest:
+Every archive used to report `id: template.<name>` and version `0.0.1-template`. That is fixed:
+metadata is read from an optional `<scenario>/scenario.meta.json`, and the fallback when it is
+absent is **derived** — id is the slugified folder name, name is the folder name, version is
+`1.0.0`. Fields nobody has stated (`description`, `author`) are **omitted rather than invented**,
+because a wrong author in a catalogue is worse than a missing one.
 
-```js
-id: `template.${scenarioName.toLowerCase().replace(/[^a-z0-9]+/g, ".")}`,
-name: `Template ${scenarioName}`,
-version: "0.0.1-template",
-category: "template",
-author: { name: "Template Author", ... },
-engineVersion: "0.0.0-template",
-```
+`engineVersion` is stamped from the installed engine, so it answers "which engine was this built
+against" — the first thing to check when a scenario compiles here but fails in the platform.
 
-So a published scenario reports `id: template.benchscene3.solarsystem` and version
-`0.0.1-template`. **This is why the manifest id never matches the platform's catalog id** —
-virtual-lab uses slugs (`solar-system`), treats the mismatch as a warning rather than an error,
-and records `manifest_id` separately. Do not "fix" this by making the platform enforce equality;
-fix it here, by sourcing real metadata. Tracked in
-[`docs/TASK-rebuild-and-republish.md`](docs/TASK-rebuild-and-republish.md).
+`solar-system-scenario` declares `id: "solar-system"` to match the platform's catalogue slug. Do
+not "fix" a mismatch by making the platform enforce equality; state the right id here.
+
+**Identity is shared with the manifest emitter through `scenario-meta.mjs`, deliberately.** Two
+things must agree across the ZIP and the streaming manifest or the artifacts describe different
+content: the scenario **id**, and each asset's **guid**. A scene serialized while running from a
+ZIP has to keep resolving when the same scenario is later served from a manifest. Guids are
+`sha256(id + NUL + path)` — never content — so re-encoding a texture does not move one, and a
+rebuild produces byte-identical output. Renaming an asset *does* change its guid; that is the
+honest limit of deriving identity from a path.
 
 ## Platform contract
 
@@ -104,8 +113,22 @@ npm run build:all                                        # everything
 npm run clean:release                                    # empty ReleaseScenarios/
 
 $env:INCLUDE_SKYBOX = "1"                                # also convert the skybox panorama
-npm run build -- --scenario Benchscene3_solarsystem --ktx2
+npm run build -- --scenario Benchscene3_solarsystem --ktx2 --strict
 ```
+
+A second, additive artifact — the streaming manifest. The ZIP path is unchanged by it, and the
+platform cannot consume it yet; it exists so the engine's streaming can be run against real
+content. Build the ZIPs first, since it reads them:
+
+```powershell
+npm run manifest:all -- --tests     # <name>.scenario.json + a shared objects/ store
+npm run manifest:verify             # every referenced file exists and hashes as recorded
+npm run manifest:verify-fetch       # the engine loads them over HTTP, LOD levels included
+npm run manifest:verify-render      # headless browser, both load paths, compared
+```
+
+Serving `ReleaseScenarios/` with any static file server is a complete origin — no `baseUrl` is
+written, so the manifest's own location is the base.
 
 **Either shell works — the builder no longer depends on PATH order.** Both external binaries it
 shells out to are ambiguous on Windows, so each is resolved explicitly:
@@ -124,10 +147,12 @@ only requires it on PATH; the fallback to `C:\Program Files\KTX-Software\bin` li
 scenario's `convert_to_ktx2.sh`, not in `build-package.mjs`. Only scenarios that ship that script
 are affected; the rest build unchanged.
 
-**`--ktx2` failing does not fail the build.** `runKtx2Conversion` catches the error, prints
-`[ktx2] conversion failed — packaging existing textures only`, and packages the originals. So a
-`--ktx2` run can quietly produce an archive with **no** `.ktx2` variants. Always check the ZIP
-contents rather than trusting the exit code:
+**`--ktx2` failing does not fail the build — unless you pass `--strict`.** By default
+`runKtx2Conversion` catches the error, prints `[ktx2] conversion failed — packaging existing
+textures only`, and packages the originals, so a `--ktx2` run can quietly produce an archive with
+**no** `.ktx2` variants. That is right for a routine build and wrong for a release: add
+`--strict` and the build stops with exit 1 instead. Either way, check the ZIP contents rather
+than trusting the exit code:
 
 ```powershell
 python -c "import zipfile; print([n for n in zipfile.ZipFile('ReleaseScenarios/Benchscene3_solarsystem.zip').namelist() if n.endswith('.ktx2')])"
@@ -137,12 +162,19 @@ python -c "import zipfile; print([n for n in zipfile.ZipFile('ReleaseScenarios/B
 
 ```
 Scenarios/<Name>/
-├── scripts/            # TypeScript; exactly one class extends ScenarioBehaviour
+├── scripts/             # TypeScript; exactly one class extends ScenarioBehaviour
 │   ├── components/
 │   └── helpers/
-├── assets/             # copied verbatim into the archive
-└── convert_to_ktx2.sh  # optional, enables --ktx2 for this scenario
+├── assets/              # copied verbatim into the archive
+├── scenario.meta.json   # optional: id, name, version, category, streaming priorities
+├── lods/                # optional: coarser levels — NEVER copied into the ZIP
+└── convert_to_ktx2.sh   # optional, enables --ktx2 for this scenario
 ```
+
+**`lods/` sits outside `assets/` on purpose.** `assets/` is copied verbatim, so a variant placed
+there would enter the ZIP and make it bigger while making nothing faster — the client would have
+to take every level to use one. Only the manifest can address levels individually, which is why
+the ladder is worth generating at all. `lods/` is gitignored, like `dist/` and `*.ktx2`.
 
 `ReleaseScenarios/` and `Scenarios/*/dist/` are gitignored — build outputs are never committed.
 `dist/` is also removed automatically after each successful package step, so seeing one lying
@@ -156,11 +188,27 @@ image use `FORCE=1` or the archive will ship the stale encode.
 
 ## Known gaps
 
-- **Template manifest metadata**, as described above.
-- **No tests.** The builder has no automated coverage; correctness is verified by inspecting the
-  produced ZIPs.
+- **No unit tests.** There is no test runner. What exists instead is four verification layers,
+  all runnable and all used to check the work in `docs/PLAN.md`:
+  `npm run manifest:verify` (every file a manifest references exists and still hashes to what
+  was recorded), `manifest:verify-fetch` (the engine's own `StreamingAssetSource` can load every
+  manifest over HTTP, including selecting individual LOD levels), `manifest:verify-render`
+  (headless Edge loads every scenario from **both** the ZIP and the manifest and compares id,
+  entry point and scene-graph size), and virtual-lab's `archive-validation.js` run directly.
+  ZIP contents are still worth inspecting by hand — that is what caught the `--ktx2` silent
+  failure.
+- **Peak texture VRAM against a budget is unmeasured.** The only GPU available here is
+  swiftshader, where the number would mean nothing. Needs the engine's harness on real hardware.
+- **`Benchscene3` still ships both `.jpg` and `.ktx2`.** With a manifest that A/B is two levels,
+  so the dual-format archive can retire — but not before the platform reads manifests.
 
 ## Open work
 
-[`docs/TASK-rebuild-and-republish.md`](docs/TASK-rebuild-and-republish.md) — rebuild every
-scenario and republish into virtual-lab, whose archives are stale imports from Google Drive.
+[`docs/PLAN.md`](docs/PLAN.md) is the tracker: P0 (compress content), P1 (emit a manifest),
+P2 (real metadata) and P4 (housekeeping) are done; P3 (LOD variants) is built for textures and
+meshes, with only its VRAM criterion outstanding. Every remaining item needs something outside
+this repository — a real GPU, or a platform that reads manifests.
+
+[`docs/TASK-rebuild-and-republish.md`](docs/TASK-rebuild-and-republish.md) — republish into
+virtual-lab, whose archives are stale imports from Google Drive and are now stale again against
+these builds. The upload itself is a manual `/admin` step.
