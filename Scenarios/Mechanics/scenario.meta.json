@@ -1,0 +1,10 @@
+{
+  "id": "mechanics-incline",
+  "name": "Механіка: похила площина",
+  "description": "Брусок на похилій площині з побудованою діаграмою сил. Повзунки кута, маси й коефіцієнта тертя показують головне: тіло стоїть, доки tg α ≤ μ, а прискорення не залежить від маси.",
+  "category": "simulation",
+  "version": "1.0.0",
+  "contentVersion": 1,
+
+  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name. category is 'simulation' rather than 'education' because the scenario integrates a model over time instead of presenting a fixed structure; the school subject (physics / Фізика) is a platform field entered at upload in /admin. No streaming.priorities block: fully procedural, no assets."
+}

@@ -2,9 +2,8 @@
 
 **Read [`TASK-catalogue-expansion.md`](TASK-catalogue-expansion.md) first.**
 
-**Deliverable:** `Scenarios/Mechanics/` — «Механіка: похила площина». A block on a ramp, driven by
-the engine's real rigid-body solver, with the force vectors drawn and the analytic answer printed
-next to the measured one. Category `simulation`.
+**Deliverable:** `Scenarios/Mechanics/` — «Механіка: похила площина». A block on a ramp with its
+free-body diagram drawn and every number on screen in SI. Category `simulation`.
 
 ## 1. What to create
 
@@ -18,22 +17,45 @@ Scenarios/Mechanics/
     └── helpers/
         ├── UIKit.ts             ← copy
         ├── CameraSetup.ts       ← copy
-        ├── Ramp.ts              ← ramp, ground, blocks, materials
-        └── VectorArrow.ts       ← a LineRenderer + cone tip that follows a body
+        ├── Ramp.ts              ← ramp, ground, blocks, and the force arrows
+        └── Slide.ts             ← the equation of motion, engine-free
 ```
+
+**`components/Tracker.ts` is not needed and was not built.** It existed to sample a `Rigidbody`
+each `fixedUpdate`; there is no `Rigidbody` here. See §2.
 
 ## 2. Units and the world
 
 **1 world unit = 1 metre**, and say so in a comment. Every number on screen is then SI without a
 conversion factor anyone can get wrong.
 
-- Ramp: a scaled `BoxCollider` + cube mesh, rotated about Z by α. Rotate the **ramp**, keep
-  gravity vertical — the reverse (tilting gravity) is easier to code and teaches the wrong model.
-- Ground: a plane the block slides onto, so the run has an end.
-- Block: `BoxCollider` + `Rigidbody`, `mass` from the slider, `PhysicMaterial(friction, 0)`.
-  Verified API: `new PhysicMaterial(friction, bounciness)`, and `Rigidbody.material` is settable.
-- `Physics.gravity` is a settable static — use it for the planet dropdown rather than scaling
-  masses.
+- Ramp: a scaled cube mesh, rotated about Z by α. Rotate the **ramp**, keep gravity vertical —
+  the reverse (tilting gravity) is easier to code and teaches the wrong model.
+- Ground: a flat run the block slides onto, so the run has an end.
+- Block: a cube placed along the path by `helpers/Slide.ts`.
+
+### The rigid-body solver cannot carry μ, so it is not used
+
+This section originally called for `BoxCollider` + `Rigidbody` + `PhysicMaterial(μ, 0)`, and the
+whole scenario turns on μ. It does not work, and the reason is worth stating precisely because it
+affects any scenario that wants friction:
+
+`PhysicMaterial` writes its `friction` onto a cannon-es `Material`. cannon only reads a
+material's friction through a `ContactMaterial` registered for that **pair** of materials, and
+the engine never calls `world.addContactMaterial` — zero call sites in `WebEngineTS.esm.js`, the
+only occurrence being cannon's own method definition. Every contact therefore falls back to
+`world.defaultContactMaterial`, which is a hard-coded friction of **0.3**. A μ slider wired to
+`PhysicMaterial` would move and change nothing at all.
+
+That is an engine gap, recorded in
+[`TASK-catalogue-expansion.md`](TASK-catalogue-expansion.md) §8 for the handover. In the meantime
+the inclined plane loses nothing by being integrated directly: `a = g(sin α − μ cos α)` is exact
+for this problem, not an approximation of what a solver would produce. `helpers/Slide.ts` imports
+nothing from the engine, which also means the physics is checkable in Node — and it was checked
+before the scene existed.
+
+`Physics.gravity` is likewise unused: with no rigid bodies there is nothing for it to act on, and
+the planet dropdown feeds `g` straight into the equation.
 
 ## 3. Controls
 
@@ -42,7 +64,7 @@ conversion factor anyone can get wrong.
 | Slider «Кут нахилу α» | 0…60°, whole degrees | Rebuilds the ramp transform; resets the run |
 | Slider «Маса m» | 0.5…10 кг | |
 | Slider «Коефіцієнт тертя μ» | 0…1.0 | Applied to both surfaces |
-| Dropdown «Тяжіння» | Земля 9.81 / Місяць 1.62 / Марс 3.71 / Юпітер 24.79 | Sets `Physics.gravity` |
+| Dropdown «Тяжіння» | Земля 9.81 / Місяць 1.62 / Марс 3.71 / Юпітер 24.79 | Feeds `g` into the equation |
 | Buttons | «Пуск», «Пауза», «Скинути» | |
 | Toggle «Вектори сил» | | §4 |
 | Toggle «Слід» | | Trail of the block's path, `LineRenderer` |
@@ -53,8 +75,9 @@ is how a student ends up measuring one configuration and reading another.
 
 ## 4. Force vectors
 
-Four arrows anchored on the block, each a `LineRenderer` with a small cone at the tip, length
-proportional to magnitude with a stated scale (`1 Н = 0.05 м` in the legend):
+Four arrows anchored on the block, each a shaft and two head strokes drawn with `LineRenderer`s
+in the bench's own plane — no cone mesh, so there is no winding to get wrong on geometry nobody
+can inspect here.
 
 | Vector | Direction | Magnitude |
 |---|---|---|
@@ -63,31 +86,45 @@ proportional to magnitude with a stated scale (`1 Н = 0.05 м` in the legend):
 | `F_тертя` | up the slope, opposing motion | `μ·N`, capped at the driving force while at rest |
 | `F_рівнод` | along the slope | `m·g·sin α − F_тертя` |
 
-Label each with a world-space canvas (umbrella §5 — remember they are not depth-occluded).
+**Scaled so that `mg` is always the same length on screen**, with the rest in that same scale.
+A fixed newtons-per-metre scale cannot serve both a 0.5 kg block on the Moon (0.8 Н) and a 10 kg
+block on Jupiter (248 Н): one is invisible and the other runs off the bench. Normalising on the
+weight keeps every arrow legible and keeps the *ratios* true, which is what a free-body diagram
+is read for. The newtons are on the panel, and the legend says what the scaling is.
+
+No world-space labels, for the reason given in
+[`TASK-optics-lenses.md`](TASK-optics-lenses.md) §3 — the legend names each colour instead.
 
 **Check:** while the block is at rest, `F_тертя` exactly cancels `mg·sin α` and `F_рівнод` is
 zero-length. Static friction is *not* `μN` until it has to be; drawing it at full length on a
 stationary block is the classic wrong diagram.
 
-## 5. Readouts — measured beside calculated
+## 5. Readouts
 
-Two columns, headed «Розрахунок» and «Вимір»:
+One column, not two. The «Вимір» column this section used to call for was there to show that the
+solver agreed with theory; with no solver there is nothing independent to measure, and printing
+the integrator's output under a heading that says «вимір» would be a lie about where the number
+came from.
 
-| Row | Розрахунок | Вимір |
-|---|---|---|
-| `mg·sin α` | `m·g·sin α` | — |
-| `mg·cos α` (= N) | `m·g·cos α` | — |
-| `F_тертя max` | `μ·m·g·cos α` | — |
-| `a` | `g(sin α − μ·cos α)`, floored at 0 | finite difference of the sampled velocity |
-| `v` | `a·t` | `Rigidbody.velocity` magnitude |
-| `s` | `a·t²/2` | distance travelled |
+State line first — «Спокій — тертя утримує» / «Ковзання по похилій» / «Гальмування на
+горизонталі» / «Зупинився» — then `tg α` against `μ` so the threshold is legible as an
+inequality, then:
 
-**Check:** the two `a` columns agree to within a few percent for α = 30°, μ = 0.2. They will not
-agree exactly — the solver has its own timestep — and the gap is itself worth showing. If they
-diverge grossly, the ramp's `PhysicMaterial` is not being applied, or friction is being combined
-between two materials in a way that halves it.
+| Row | Shown |
+|---|---|
+| `mg` | `m·g` |
+| `mg·sin α` | the driving component |
+| `N = mg·cos α` | |
+| `F_тертя` | what friction is *actually* doing, with `μN` beside it as the maximum |
+| `F_рівнодійна` | zero while at rest |
+| `a` | `g(sin α − μ·cos α)` on the ramp, `−μg` on the flat |
+| `t`, `v`, `s` | live |
 
-State line, in words: «спокій — тертя утримує (tg α ≤ μ)» / «ковзання — a = … м/с²».
+**The one honest comparison that remains, and it is worth keeping:** while the block is on the
+ramp the acceleration is constant, so the integrated `v` and `s` must equal `a·t` and `a·t²/2`
+exactly. Both pairs are printed together. `Slide.step` integrates trapezoidally for this reason —
+semi-implicit Euler drifts about 0.2 % high over two seconds at 240 Hz, which is invisible in a
+simulation and glaring when the textbook value is printed next to it.
 
 ## 6. The three demonstrations to check by hand
 
@@ -102,12 +139,12 @@ State line, in words: «спокій — тертя утримує (tg α ≤ μ
 
 ## 7. Notes for the implementer
 
-- **Sample in `fixedUpdate`, draw in `update`.** `Tracker.ts` reads velocity on the physics
-  timestep; the readouts refresh on the render frame. Sampling velocity in `update` and calling
-  it a measurement makes the "вимір" column a function of frame rate.
-- **Reset means reset.** Set position, rotation, `velocity` and `angularVelocity`, and call
-  `wakeUp()`. A body left asleep will not start moving when the angle changes.
-- **Constrain rotation** (`RigidbodyConstraints`) so the block slides rather than tumbling. A
-  tumbling box is a different lesson and a worse one — rolling and toppling need proper inertia.
+- **Integrate in `fixedUpdate`, draw in `update`.** `Time.fixedDeltaTime` is a fixed step, so the
+  motion does not depend on frame rate; placement and the readouts refresh on the render frame.
+- **Reset means reset**, and it happens on every parameter change: `Slide.configure` resets time,
+  distance and speed, and the trail is cleared with it.
+- **The block lies flat on whatever it stands on** — `Quaternion.fromToRotation(Vector3.up, n)`.
+  It slides rather than tumbling, which is the intended lesson; rolling and toppling need proper
+  inertia and are a different scenario.
 - **Out of scope:** rolling bodies, air resistance, a pulley or a second connected body,
   energy-conservation bookkeeping. Each is a good separate scenario.

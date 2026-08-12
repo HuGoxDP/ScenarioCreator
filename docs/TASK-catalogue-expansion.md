@@ -158,7 +158,24 @@ who wrote it. A Check that cannot be performed means the scenario is not finishe
 inherited from [`TASK-ui-showcase.md`](TASK-ui-showcase.md) and it is the only thing standing in
 for a test runner here.
 
-## 7. Two things to settle before writing code
+## 7. Engine gaps found while building — for the handover
+
+Rule 3 says to report what the engine cannot do rather than working around it inside a scenario.
+This is that list. Each was established from the installed engine, not assumed.
+
+**`PhysicMaterial.friction` never reaches a contact.** It is written onto a cannon-es `Material`,
+but cannon only reads friction through a `ContactMaterial` registered for a *pair* of materials,
+and the engine never calls `world.addContactMaterial` — zero call sites in `WebEngineTS.esm.js`.
+Every contact falls back to `world.defaultContactMaterial`, a hard-coded friction of **0.3**. Any
+scenario with a friction control is affected; `mechanics-incline` integrates its own equation of
+motion because of it. The engine-side fix is to register a `ContactMaterial` per material pair
+(or to expose `world.defaultContactMaterial` so a scenario can set it).
+
+**`Slider` has no `setValueWithoutNotify`.** `Toggle`, `Dropdown` and `Scrollbar` all have one.
+`makeSlider` in the shared `UIKit.ts` works around it with a suppression flag; a symmetric API
+would remove the need.
+
+## 8. Two things to settle before writing code
 
 - **`Molecules` has no `scenario.meta.json`.** Fix it in the same pass as the first new scenario
   (`id: "molecules"`, `name: "Молекулярні моделі"`, `category: "education"`); otherwise the
