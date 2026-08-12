@@ -32,6 +32,13 @@ export interface ICameraRig {
     /** Switch to follow camera tracking a target transform. */
     activateFollow(target: Transform): void;
 
+    /**
+     * Re-frames the orbit camera. Subjects vary hugely in size — a scenario
+     * showing both H₂ and a salt lattice needs to pull back for one and move in
+     * for the other, or half of them render as a dot.
+     */
+    setOrbitDistance(distance: number): void;
+
     /** The main Camera component (for reading FOV, aspect, etc.). */
     readonly camera: Camera;
 }
@@ -159,6 +166,12 @@ export function createCameraRig(config: CameraConfig = {}): ICameraRig {
             orbitVCam.priority = 0;
             flyVCam.priority = 0;
             console.log("[Camera] → Follow");
+        },
+
+        setOrbitDistance(distance: number) {
+            // Clamp into the rig's own zoom range so a caller cannot place the
+            // camera somewhere the user could never scroll back from.
+            orbBody.distance = Math.min(Math.max(distance, orbBody.minDistance), orbBody.maxDistance);
         },
     };
 

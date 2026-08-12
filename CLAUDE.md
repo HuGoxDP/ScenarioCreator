@@ -4,9 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # ScenarioCreator
 
-Build pipeline that turns scenario **source** in `Scenarios/` into distributable `.zip` archives
-in `ReleaseScenarios/`. One shared `node_modules` at the repo root serves every scenario — there
-are no per-scenario `package.json`, `tsconfig.json` or build scripts.
+Build pipeline that turns scenario **source** into distributable `.zip` archives. One shared
+`node_modules` at the repo root serves every scenario — there are no per-scenario
+`package.json`, `tsconfig.json` or build scripts.
+
+**Two roots, kept apart on purpose:**
+
+| Source | Output | For |
+|---|---|---|
+| `Scenarios/` | `ReleaseScenarios/` | Production — what students see in the catalog. |
+| `TestScenarios/` | `ReleaseScenarios/test/` | Measurement and engine testing: benchmark scenes, feature demos. |
+
+`--all` builds **production only**. Test scenarios are opt-in — `--tests`, or name them
+explicitly — so a routine rebuild-and-publish cannot put a benchmark scene in front of a
+student. A name may not exist in both roots; the builder refuses, because then "is this
+publishable?" would have no answer.
 
 User-facing usage lives in `README.md`. **This file is the working guide**: the rules that are
 easy to break and the reasons behind them.
@@ -52,8 +64,9 @@ scenario compiles here but fails at runtime in the platform, suspect that gap fi
 
 `build-package.mjs` (327 lines, run via `npm run build`). Per scenario:
 
-1. **Discovery** — every directory under `Scenarios/` that contains a `scripts/` folder is a
-   scenario. A folder without `scripts/` is invisible to the builder.
+1. **Discovery** — every directory under `Scenarios/` *or* `TestScenarios/` that contains a
+   `scripts/` folder is a scenario, tagged production or test by which root it came from. A
+   folder without `scripts/` is invisible to the builder.
 2. **Compile** — `tsc` is invoked directly from `node_modules/typescript/lib/tsc.js` with flags
    on the command line and **`--ignoreConfig`**: the root `tsconfig.json` is deliberately *not*
    used for scenario compilation. Target ES2020, module ESNext, strict, no declarations, no

@@ -5,19 +5,49 @@ import { execFileSync } from "node:child_process";
 import { assetGuid, installedEngineVersion, readScenarioMeta } from "./scenario-meta.mjs";
 
 const rootDir = process.cwd();
+// Two sources, kept apart on purpose. `Scenarios/` is what students get;
+// `TestScenarios/` holds the ones used for measurement and engine testing —
+// benchmark scenes, feature demos — which must never reach the catalog by
+// accident. The split is a directory rather than a flag inside each scenario
+// so it is visible without opening anything.
 const scenariosRoot = path.join(rootDir, "Scenarios");
+const testScenariosRoot = path.join(rootDir, "TestScenarios");
 const releaseRoot = path.join(rootDir, "ReleaseScenarios");
 
+/** Test packages land in their own folder, so a stray upload cannot mix them in. */
+const testReleaseRoot = path.join(releaseRoot, "test");
+
+/** Scenario folders under one root. A folder without `scripts/` is not one. */
+function discoverIn(root) {
+    if (!existsSync(root)) return [];
+
+    return readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(root, entry.name))
+        .filter((dir) => existsSync(path.join(dir, "scripts")));
+}
+
+/**
+ * Every scenario, keyed by name, carrying which root it came from.
+ * A name may not appear in both roots — that would make `--scenario <name>`
+ * ambiguous and, worse, make it unclear whether the result is publishable.
+ */
 function getScenarioMap() {
     const map = new Map();
 
-    const dirs = readdirSync(scenariosRoot, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => path.join(scenariosRoot, entry.name))
-        .filter((dir) => existsSync(path.join(dir, "scripts")));
+    for (const dir of discoverIn(scenariosRoot)) {
+        map.set(path.basename(dir), { dir, kind: "production" });
+    }
 
-    for (const dir of dirs) {
-        map.set(path.basename(dir), dir);
+    for (const dir of discoverIn(testScenariosRoot)) {
+        const name = path.basename(dir);
+        if (map.has(name)) {
+            throw new Error(
+                `Scenario '${name}' exists in both Scenarios/ and TestScenarios/. ` +
+                `Rename one — a scenario is either published or it is not.`
+            );
+        }
+        map.set(name, { dir, kind: "test" });
     }
 
     return map;
@@ -30,6 +60,7 @@ function parseArgs() {
     let buildAll = false;
     let ktx2 = false;
     let strict = false;
+    let includeTests = false;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -47,6 +78,10 @@ function parseArgs() {
         }
         if (arg === "--strict") {
             strict = true;
+            continue;
+        }
+        if (arg === "--tests") {
+            includeTests = true;
             continue;
         }
         if (arg === "--scenario") {
@@ -69,6 +104,7 @@ function parseArgs() {
         selected,
         ktx2,
         strict,
+        includeTests,
     };
 }
 
@@ -257,13 +293,20 @@ function runKtx2Conversion(scenarioDir) {
     }
 }
 
-function buildScenario(scenarioDir, ktx2) {
+/**
+ * @param scenarioDir absolute path to the scenario folder
+ * @param ktx2 whether to also emit compressed textures
+ * @param kind "production" or "test" — decides which release folder it lands in
+ */
+function buildScenario(scenarioDir, ktx2, kind) {
     const scenarioName = path.basename(scenarioDir);
     const scriptsDir = path.join(scenarioDir, "scripts");
     const distDir = path.join(scenarioDir, "dist");
     const assetsDir = path.join(scenarioDir, "assets");
     const entryPoint = detectEntryPoint(scriptsDir);
-    const zipPath = path.join(releaseRoot, `${scenarioName}.zip`);
+    const outRoot = kind === "test" ? testReleaseRoot : releaseRoot;
+    mkdirSync(outRoot, { recursive: true });
+    const zipPath = path.join(outRoot, `${scenarioName}.zip`);
 
     console.log(`\n[build] ${scenarioName}`);
 
@@ -336,8 +379,10 @@ function buildScenario(scenarioDir, ktx2) {
     console.log(`[ok] Created ${zipPath}`);
 }
 
-if (!existsSync(scenariosRoot)) {
-    throw new Error(`Scenarios directory not found: ${scenariosRoot}`);
+if (!existsSync(scenariosRoot) && !existsSync(testScenariosRoot)) {
+    throw new Error(
+        `No scenario roots found. Expected ${scenariosRoot} or ${testScenariosRoot}.`
+    );
 }
 
 mkdirSync(releaseRoot, { recursive: true });
@@ -348,20 +393,33 @@ const scenarioMap = getScenarioMap();
 const availableNames = [...scenarioMap.keys()].sort();
 
 if (availableNames.length === 0) {
-    throw new Error(`No scenario folders with scripts/ were found in ${scenariosRoot}`);
+    throw new Error(
+        `No scenario folders with scripts/ were found in ${scenariosRoot} or ${testScenariosRoot}`
+    );
 }
 
 if (options.listOnly) {
-    console.log("Available scenarios:");
-    for (const name of availableNames) {
-        console.log(`- ${name}`);
-    }
+    const byKind = (kind) => availableNames.filter((n) => scenarioMap.get(n).kind === kind);
+
+    console.log("Production scenarios (Scenarios/):");
+    for (const name of byKind("production")) console.log(`- ${name}`);
+
+    const tests = byKind("test");
+    console.log("\nTest scenarios (TestScenarios/ — built only with --tests or by name):");
+    if (tests.length === 0) console.log("- (none)");
+    for (const name of tests) console.log(`- ${name}`);
+
     process.exit(0);
 }
 
 let namesToBuild;
 if (options.buildAll) {
-    namesToBuild = availableNames;
+    // `--all` means "everything publishable". Test scenarios are opt-in via
+    // --tests or by naming them, so a routine rebuild-and-publish cannot ship
+    // a benchmark scene to students.
+    namesToBuild = availableNames.filter(
+        (n) => options.includeTests || scenarioMap.get(n).kind === "production"
+    );
 } else if (options.selected.length > 0) {
     namesToBuild = [...new Set(options.selected)];
 } else {
@@ -377,7 +435,12 @@ for (const name of namesToBuild) {
 }
 
 for (const name of namesToBuild) {
-    buildScenario(scenarioMap.get(name), options.ktx2);
+    const entry = scenarioMap.get(name);
+    buildScenario(entry.dir, options.ktx2, entry.kind);
 }
 
+const builtTests = namesToBuild.filter((n) => scenarioMap.get(n).kind === "test");
 console.log(`\nDone. Packages are in ${releaseRoot}`);
+if (builtTests.length > 0) {
+    console.log(`Test packages (${builtTests.join(", ")}) are in ${testReleaseRoot} — not for the catalog.`);
+}

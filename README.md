@@ -1,6 +1,10 @@
 # ScenarioCreator
 
-Centralized build pipeline for scenarios in `Scenarios/`.
+Centralized build pipeline for scenarios.
+
+Production scenarios live in `Scenarios/` and build to `ReleaseScenarios/`.
+Scenarios used for measurement and engine testing live in `TestScenarios/` and build to
+`ReleaseScenarios/test/` — they are never included by `--all`, only by `--tests` or by name.
 
 ## How it works
 
@@ -11,7 +15,7 @@ Centralized build pipeline for scenarios in `Scenarios/`.
   - Generates `<scenario>/dist/manifest.json` from the scenario's optional `scenario.meta.json`
     (derived defaults when absent), plus the detected `entryPoint` and a stable guid per asset.
   - Copies `<scenario>/assets` if present.
-  - Creates `<scenario>.zip` in `ReleaseScenarios/`.
+  - Creates `<scenario>.zip` in `ReleaseScenarios/` (or `ReleaseScenarios/test/`).
   - Removes `<scenario>/dist` after ZIP creation.
 
 ## Build
@@ -20,6 +24,9 @@ Centralized build pipeline for scenarios in `Scenarios/`.
 npm run build:list
 npm run build -- --scenario Benchscene3_solarsystem
 npm run build -- --scenario Benchscene2_complexmodel,Benchscene3_solarsystem
+npm run build -- --all            # production scenarios only
+npm run build -- --all --tests    # production + test scenarios
+npm run build -- --list           # shows both groups separately
 npm run build:all
 ```
 
