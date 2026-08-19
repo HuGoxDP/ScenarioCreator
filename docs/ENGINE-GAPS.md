@@ -67,6 +67,51 @@ controls that already have it.
 
 ---
 
+## 3. `Texture2D.maxSize` silently does nothing on the KTX2 path
+
+**Wanted:** the benchmark harness's size cap to apply whichever texture variant
+`Resources.preferExtension` selected, so `maxSize` and `ktx2` are independent axes of the same
+matrix.
+
+**What happens:** with `preferExtension = ".ktx2"` the cap is ignored entirely. No error, no
+warning, no `[Texture2D] Downscaled …` line — the texture simply arrives at full size.
+
+**Why.** The decoder registered for `Texture2D` dispatches on the file extension:
+
+```js
+Resources.registerDecoder(Texture2D, [".png",".jpg",".jpeg",".webp",".gif",".ktx2"],
+    async (bytes, path) => path.endsWith(".ktx2")
+        ? Texture2D.fromKTX2ArrayBuffer(ab)
+        : Texture2D.fromArrayBuffer(ab));
+```
+
+`fromArrayBuffer` decodes through an `Image` and resizes on a canvas when
+`maxSize > 0 && (width > maxSize || height > maxSize)`. `fromKTX2ArrayBuffer` hands the buffer to
+`KTX2Loader.parse` and wraps the result — it never reads `Texture2D.maxSize`. Which is
+unsurprising, since a transcoded block-compressed texture cannot be resized on a 2D canvas; the
+gap is that nothing says so.
+
+**Measured**, on `Benchscene2_complexmodel` with three 2048×2048 maps, estimated texture VRAM:
+
+| | `maxSize=0` | `maxSize=2048` | `maxSize=1024` |
+|---|---|---|---|
+| `ktx2=0` | 48.00 MB | 48.00 MB | **12.00 MB** |
+| `ktx2=1` | 16.00 MB | 16.00 MB | 16.00 MB |
+
+The whole bottom row is one number. A results table with a `maxSize` column and a `ktx2` column
+will show three cells that look like "the cap did nothing here", and the reason is not in the
+content.
+
+(The top row's first two cells tie for a different and correct reason: the test is strictly
+`>`, so a texture exactly at the cap is left alone. That one is content — the sources are
+2048×2048 — not an engine gap.)
+
+**Engine-side fix:** either apply the cap by dropping mip levels when transcoding — KTX2 carries
+a mip pyramid, so selecting a smaller base level is the natural equivalent — or, at minimum, warn
+once when `maxSize > 0` and a `.ktx2` is loaded, so a silent no-op becomes a visible one.
+
+---
+
 ## How to add to this file
 
 One section per gap, newest last, with the same five parts: what was wanted, what happens, why
