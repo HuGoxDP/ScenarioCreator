@@ -2,10 +2,37 @@
 // ============================================================
 // Plain content scene: a grid of untextured primitives over a floor plane,
 // slowly rotating. No benchmarking or optimization toggles live here — the
-// engine harness (WebEngineTS benchmarks/run.ts) drives object counts /
-// warmup / dirty transforms / measurement from the outside. See the
-// WebEngineTS "Single profiling system" policy.
+// engine harness (WebEngineTS benchmarks/run.ts) drives warmup / dirty
+// transforms / measurement from the outside. See the WebEngineTS
+// "Single profiling system" policy.
 //
+// ONE SCENE, FOUR ARCHIVES
+//   This file is shared verbatim by Benchscene1_N100, _N500, _N1000 and _N5000.
+//   The ONLY difference between them is the value of OBJECT_COUNT below; a diff
+//   between any two of these files shows exactly one changed line, and that is
+//   the property the count sweep depends on.
+//
+//   Four archives rather than one parameterised scene because a scenario has no
+//   parameter channel and should not have one: `IScenarioContext` exposes
+//   `manifest`, `assets` and `importScript`, and nothing from the URL reaches
+//   scenario code. Reading a count from the query string would be a benchmark
+//   knob inside content, which is the thing the single-profiling-system policy
+//   forbids.
+//
+// WHAT THIS SCENE COSTS PER FRAME, since that is what makes a dirty-transform
+// measurement interpretable:
+//   - ONE transform write per object per frame: `localRotation`, and nothing
+//     else. No position, no scale, no parent pivot, no world-space read.
+//   - The Quaternion is computed once and shared by every object, so the loop
+//     is a pure write loop.
+//   One write per transform is the LEAST favourable workload a write-coalescing
+//   optimization can be given — it breaks even around three to four writes. That
+//   is a property of this scene, not a defect, and it is stated here rather than
+//   tuned away. Changing it is task S1.2 and needs a decision about what the
+//   scene is meant to represent first.
+//
+// GameObjects: OBJECT_COUNT + 4 (camera, sun, ambient, floor).
+// Deterministic: no randomness, fixed object order, fixed initial angle.
 // No textures: the scene is geometry, material and lighting only.
 // ============================================================
 
@@ -16,7 +43,7 @@ import {
 } from "WebEngineTS";
 
 /** Objects in the grid. Scene content, not a benchmark knob. */
-const OBJECT_COUNT = 1000;
+const OBJECT_COUNT = 500;
 
 /** Spacing between grid cells, in world units. */
 const SPACING = 2.5;

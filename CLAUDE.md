@@ -226,6 +226,13 @@ this repository — a real GPU, or a platform that reads manifests.
 virtual-lab, whose archives are stale imports from Google Drive and are now stale again against
 these builds. The upload itself is a manual `/admin` step.
 
+[`docs/TASK-benchmark-archives.md`](docs/TASK-benchmark-archives.md) — the `TestScenarios/`
+archives, against the tracker in `WebEngineTS-Benchmarks/tasks/scenariocreator.md`. Three of that
+suite's optimization flags had nothing to act on and the cause was here: Benchscene2's textures
+were embedded in its GLB, and Benchscene1's object count was welded into one archive. Both fixed,
+with the measurements recorded. The rebuilt ZIPs have deliberately **not** been copied into the
+benchmark repo — those are inputs to a measurement run in flight.
+
 [`docs/TASK-catalogue-expansion.md`](docs/TASK-catalogue-expansion.md) — content, not pipeline:
 eight more production scenarios, taking `Scenarios/` from two to ten. All eight are procedural
 and ship without a single asset, which is what keeps them clear of rule 5 and of the LOD work

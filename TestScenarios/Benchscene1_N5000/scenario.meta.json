@@ -1,0 +1,9 @@
+{
+  "id": "benchscene1-n5000",
+  "name": "Benchscene 1 — Primitives, N=5000",
+  "description": "Grid of 5000 untextured primitives over a floor plane, one rotation write per object per frame. One of four count variants of a single scene; only OBJECT_COUNT differs.",
+  "category": "test",
+  "version": "1.0.0",
+  "contentVersion": 1,
+  "_comment": "Part of the Table 1 count sweep (100/500/1000/5000) described in WebEngineTS-Benchmarks/tasks/scenariocreator.md S1.1. The id is stated rather than derived so the four archives form an obvious series; the derived value would be 'benchscene1-n5000' anyway, but stating it means a folder rename cannot silently renumber the sweep. No streaming.priorities block: the scenario has no assets at all."
+}
