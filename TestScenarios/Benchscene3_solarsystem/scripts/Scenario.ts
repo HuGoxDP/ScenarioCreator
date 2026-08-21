@@ -105,10 +105,28 @@ export default class BenchSolarSystem extends ScenarioBehaviour {
 
     // ═══════════════════ SCENE CONSTRUCTION ═══════════════════
 
+    /**
+     * Loads the panorama through `Resources`, extensionless, so the `.ktx2`
+     * variant beside it is reachable.
+     *
+     * This used to ask `Resources.getUrl("skybox/stars_panorama.jpg")` — a
+     * literal filename. `getUrl` hands back a blob URL for exactly the path it
+     * is given and never consults `preferExtension`, so the `.ktx2` in the
+     * archive was dead weight in both branches of the KTX2 A/B, and the largest
+     * texture in the scene stayed uncompressed however the flag was set. It
+     * could not be fixed here either, because `Cubemap.fromEquirectangular` only
+     * took a URL and decoded it with the browser, which cannot read KTX2.
+     *
+     * Engine `0.1.0-local.1787254037912` added the `Texture2D` overload, so the
+     * panorama can now be decoded by whichever loader its extension selects and
+     * handed over already decoded. `tryLoad` with no extension is what lets
+     * `preferExtension` choose.
+     */
     private async _loadSkybox(): Promise<void> {
         try {
-            const url = await Resources.getUrl("skybox/stars_panorama.jpg");
-            this._skybox = await Cubemap.fromEquirectangular(url);
+            const panorama = await Resources.tryLoad(Texture2D, "skybox/stars_panorama");
+            if (!panorama) return;
+            this._skybox = await Cubemap.fromEquirectangular(panorama);
             RenderSettings.skybox = this._skybox;
         } catch { /* no skybox available */ }
     }

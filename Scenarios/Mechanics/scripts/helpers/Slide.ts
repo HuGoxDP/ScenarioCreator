@@ -3,20 +3,28 @@
 // The equation of motion for a block on an inclined plane, integrated here
 // rather than handed to the engine's rigid-body solver.
 //
-// WHY NOT THE SOLVER. The scenario turns on one number — the coefficient of
-// friction — and the engine cannot currently carry it into a contact.
-// `PhysicMaterial(friction, bounciness)` writes `friction` onto a cannon-es
-// `Material`, but cannon only uses a material's friction through a
-// `ContactMaterial` registered for that *pair* of materials, and the engine
-// never calls `world.addContactMaterial` (checked: zero call sites in
-// `WebEngineTS.esm.js`). Every contact therefore falls back to
-// `world.defaultContactMaterial`, which is a fixed friction of 0.3. A μ slider
-// wired to `PhysicMaterial` would move and change nothing.
+// WHY NOT THE SOLVER. Originally because the engine could not carry μ into a
+// contact at all: `PhysicMaterial.friction` was written onto a cannon-es
+// `Material`, no `ContactMaterial` was ever registered for the pair, and every
+// contact fell back to a fixed 0.3. **That was fixed in engine
+// 0.1.0-local.1787254037912** — `Physics._registerMaterial` now pairs each
+// material with every other and with itself, combining by average. Measured on
+// a 30° ramp, a block travels 9.56 units at μ = 0.05 and 2.15 at μ = 0.9, where
+// before the two were identical.
 //
-// That is an engine gap and is written up as one. Meanwhile the inclined plane
-// is a closed-form problem — `a = g(sin α − μ cos α)` is exact, not an
-// approximation of what a solver would produce — so integrating it directly
-// costs the scenario nothing it was going to teach.
+// So the solver is now an option, and this file still does not use it. The
+// reason changed rather than disappeared:
+//
+//   `a = g(sin α − μ cos α)` is EXACT for an inclined plane. It is not an
+//   approximation of what a contact solver would produce — the solver would be
+//   the approximation, with its own timestep error. This scenario prints the
+//   integrated v and s beside a·t and a·t²/2 and they agree to the digit, which
+//   is the demonstration; routing it through a contact solver would put a small
+//   unexplained gap between two columns whose agreement is the point.
+//
+// A scenario that needs genuinely emergent contact behaviour — a tumbling body,
+// a stack, a collision — now has a route it did not have before, and should
+// take it.
 //
 // No engine imports: this file is the physics, and it is checked in Node
 // against the three claims the scenario makes.

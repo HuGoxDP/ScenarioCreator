@@ -40,8 +40,15 @@ per texture where it printed none.
 
 - `maxSize=2048` cannot move a 2048×2048 source — the engine's test is strictly `>`. See S3.1;
   it is the same situation, and the same answer.
-- The whole `ktx2=1` row is one number because `fromKTX2ArrayBuffer` never reads `maxSize`. That
-  is a silent engine no-op, written up as entry 3 of [`ENGINE-GAPS.md`](ENGINE-GAPS.md).
+- The whole `ktx2=1` row is one number because `fromKTX2ArrayBuffer` never reads `maxSize`. It is
+  an engine limitation rather than packaging, written up as entry 3 of
+  [`ENGINE-GAPS.md`](ENGINE-GAPS.md). It is no longer *silent*: as of engine
+  `0.1.0-local.1787254037912` the loader warns once and its documentation states the limitation,
+  so the three flat cells now have an explanation on the console rather than being a puzzle.
+
+**Re-measured against `0.1.0-local.1787254037912`** after the engine fixes landed: every cell is
+unchanged, so the table above holds for both builds. The archives were rebuilt anyway, because
+each manifest stamps the engine version it was built against and that field has to be true.
 
 ---
 
@@ -120,14 +127,43 @@ file forbids.
 
 ---
 
+## S3.2 — the skybox can now be KTX2 · **done**
+
+This was filed as *not fixable in content*, and it was: `_loadSkybox()` asked for a literal
+`skybox/stars_panorama.jpg`, `getUrl` hands back a blob URL for exactly the path it is given and
+never consults `preferExtension`, and asking for the `.ktx2` instead would not have helped either
+because `Cubemap.fromEquirectangular` only took a URL and decoded it with the browser, which
+cannot read KTX2. So the largest texture in the scene stayed uncompressed in both branches of the
+A/B, and the reported KTX2 saving was a **floor** on the real one.
+
+Engine `0.1.0-local.1787254037912` added the overload the benchmark repo's engine task asked for
+— `fromEquirectangular(source: string | Texture2D)` — which makes it a content fix after all.
+`_loadSkybox()` now loads the panorama through `Resources.tryLoad(Texture2D, …)` **extensionless**
+and hands the decoded texture over.
+
+Measured, same engine build, same archive contents, only the loading code differing — total
+estimated texture VRAM for the whole scene:
+
+| `_loadSkybox()` | `ktx2=0` | `ktx2=1` | saving |
+|---|---|---|---|
+| old — `getUrl("…jpg")` | 242.67 MB | 197.33 MB | 45.34 MB · **18.7 %** |
+| new — extensionless `Texture2D` | 200.00 MB | **69.33 MB** | 130.67 MB · **65.3 %** |
+
+The skybox now participates in the swap, and the reported saving for Scene 3 roughly triples. The
+`.ktx2` in the archive is no longer dead weight.
+
+One thing in that table is measured but **not explained**: the `ktx2=0` baseline also fell, 242.67
+→ 200.00 MB, although nothing about the uncompressed path was supposed to change. The likely
+cause is that the old route left the decoded panorama live *alongside* the cubemap built from it,
+while the new overload takes ownership of a texture the caller already holds — the engine has an
+internal `_equirectHandleFor` for exactly that bookkeeping. That is a hypothesis from reading the
+API surface, not something verified, and it should be confirmed before any load-time claim rests
+on it.
+
+---
+
 ## Not done, and what each needs
 
-- **S3.2 — the skybox can never be KTX2.** `_loadSkybox()` asks for a literal
-  `skybox/stars_panorama.jpg` and `getUrl` never consults `preferExtension`; even if it did,
-  `Cubemap.fromEquirectangular` takes a URL and decodes it with the browser, which cannot read
-  KTX2. Not fixable in content. The `.ktx2` beside it is kept so the archive is ready the day the
-  engine can use it — the measured KTX2 saving for Scene 3 is a **floor** on the real one until
-  then.
 - **S3.3 — seven failed model lookups.** `Scenario.js` tries `models/<planet>` for six planets
   and the moon; the archive ships no `models/`, so all seven fall back to textured spheres and
   `load_ms` is partly a measurement of failed lookups. Either ship the models or drop the

@@ -222,25 +222,22 @@ export function makeSlider(parent: GameObject, opts: SliderOptions): SliderRow {
     s.fillColor = UI.accent;
     s.backgroundColor = UI.buttonNormal;
 
-    // Toggle, Dropdown and Scrollbar each have a *WithoutNotify setter; Slider
-    // does not — assigning `value` always notifies when the value moves. So the
-    // silent path is a flag: the readout still refreshes, the caller's callback
-    // does not fire, and a scenario reflecting state it just set itself cannot
-    // drive itself in a loop.
-    let suppress = false;
     s.onValueChanged.addListener((v: number) => {
         valueText.text = format(v);
-        if (!suppress) opts.onChange(v);
+        opts.onChange(v);
     });
 
     return {
         slider: s,
         set(value: number): void {
-            suppress = true;
-            s.value = value;
-            suppress = false;
-            // Assigning an unchanged value notifies nothing, so the readout is
-            // refreshed here rather than relying on the listener.
+            // Silent on purpose: the caller is reflecting state it just set
+            // itself, and notifying here would run `onChange` a second time.
+            //
+            // Slider gained `setValueWithoutNotify` in engine
+            // 0.1.0-local.1787254037912, matching Toggle, Dropdown and
+            // Scrollbar. Before that this needed a suppression flag — see
+            // entry 2 of docs/ENGINE-GAPS.md for what it replaced.
+            s.setValueWithoutNotify(value);
             valueText.text = format(s.value);
         },
     };

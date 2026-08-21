@@ -34,25 +34,31 @@ conversion factor anyone can get wrong.
 - Ground: a flat run the block slides onto, so the run has an end.
 - Block: a cube placed along the path by `helpers/Slide.ts`.
 
-### The rigid-body solver cannot carry μ, so it is not used
+### The rigid-body solver is not used, and the reason has changed
 
 This section originally called for `BoxCollider` + `Rigidbody` + `PhysicMaterial(μ, 0)`, and the
-whole scenario turns on μ. It does not work, and the reason is worth stating precisely because it
-affects any scenario that wants friction:
+whole scenario turns on μ.
 
-`PhysicMaterial` writes its `friction` onto a cannon-es `Material`. cannon only reads a
-material's friction through a `ContactMaterial` registered for that **pair** of materials, and
-the engine never calls `world.addContactMaterial` — zero call sites in `WebEngineTS.esm.js`, the
-only occurrence being cannon's own method definition. Every contact therefore falls back to
-`world.defaultContactMaterial`, which is a hard-coded friction of **0.3**. A μ slider wired to
-`PhysicMaterial` would move and change nothing at all.
+**When it was built, that could not work.** `PhysicMaterial` wrote its `friction` onto a
+cannon-es `Material`, cannon only reads friction through a `ContactMaterial` registered for that
+**pair** of materials, and the engine never registered one — so every contact fell back to a
+hard-coded 0.3 and a μ slider would have moved without changing anything.
 
-That is an engine gap, written up in full — with the evidence and the engine-side fix — as entry
-1 of [`ENGINE-GAPS.md`](ENGINE-GAPS.md). In the meantime
-the inclined plane loses nothing by being integrated directly: `a = g(sin α − μ cos α)` is exact
-for this problem, not an approximation of what a solver would produce. `helpers/Slide.ts` imports
-nothing from the engine, which also means the physics is checkable in Node — and it was checked
-before the scene existed.
+**That was fixed in engine `0.1.0-local.1787254037912`.** `Physics._registerMaterial` now pairs
+every material with every other and with itself, combining by average. Verified behaviourally: a
+block on a 30° ramp travels 9.56 units at μ = 0.05 and 2.15 at μ = 0.9, where the two were
+previously identical. See entry 1 of [`ENGINE-GAPS.md`](ENGINE-GAPS.md).
+
+**The scenario still integrates the equation itself, for a different reason.**
+`a = g(sin α − μ cos α)` is *exact* for an inclined plane — the contact solver would be the
+approximation, with its own timestep error. §5 prints the integrated `v` and `s` beside `a·t` and
+`a·t²/2` and they agree to the digit; that agreement is the demonstration, and routing the motion
+through a solver would open a small unexplained gap between two columns whose whole point is that
+they match. A scenario needing genuinely emergent contact behaviour — a tumbling body, a stack, a
+collision — now has a route it did not have, and should take it.
+
+`helpers/Slide.ts` imports nothing from the engine, which also means the physics is checkable in
+Node — and it was checked before the scene existed.
 
 `Physics.gravity` is likewise unused: with no rigid bodies there is nothing for it to act on, and
 the planet dropdown feeds `g` straight into the equation.
