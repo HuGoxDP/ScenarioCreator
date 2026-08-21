@@ -12,43 +12,61 @@ what the archive *contains*, never to have the scenario notice it was being meas
 
 ---
 
-## S2 — Benchscene2's textures were embedded in the GLB · **done** (`c103fd2`)
+## S2 — Benchscene2's textures were embedded in the GLB · **done** (`c103fd2`, revised)
 
 Six cells of Table 2 measured the same scene. `Resources` picks its texture decoder by file
 extension, and an image inside a GLB has no file to dispatch on — GLTFLoader hands three.js the
 decoded image and the engine only wraps it, so neither `maxSize` nor `ktx2` could reach the three
 2048×2048 maps.
 
-`deembed_textures.sh` writes them out as `assets/textures/complex_{albedo,normal,metallic}.jpg`
-and strips images, textures, samplers and the `EXT_texture_webp` requirement from the model.
-`convert_to_ktx2.sh` is copied verbatim from Benchscene3 so both scenes are encoded under one
-policy. `Scenario.ts` loads the three maps **extensionless**, which is what lets
-`Resources.preferExtension` swap in the `.ktx2`, and assigns them to every `StandardMaterial` the
-model brought.
+**Only the base colour was moved out**, and that restriction is the whole shape of the fix.
+`Texture2D.fromArrayBuffer` tags every image it decodes as sRGB and no material setter corrects
+it — right for base colour, wrong for the normal and metallic-roughness maps, which hold linear
+data (entry 5 of [`ENGINE-GAPS.md`](ENGINE-GAPS.md)). A first attempt moved all three out; the
+model rendered dark and blotchy, and the two arms of the KTX2 A/B stopped shading identically.
+So the rule is: **a texture may leave the GLB only if sRGB is its correct colour space.**
 
-Measured on the rebuilt archive — estimated texture VRAM, all six cells:
+`deembed_textures.sh` extracts the colour slots and lets `gltf-transform prune` drop the orphaned
+image; `convert_to_ktx2.sh` encodes the `.ktx2` beside the `.jpg`; `Scenario.ts` loads it
+**extensionless**, which is what lets `Resources.preferExtension` swap the variant.
+
+Measured on the rebuilt archive, **a fresh page per cell** — estimated texture VRAM:
 
 | | `maxSize=0` | `maxSize=2048` | `maxSize=1024` |
 |---|---|---|---|
-| `ktx2=0` | 48.00 MB | 48.00 MB | **12.00 MB** |
-| `ktx2=1` | **16.00 MB** | 16.00 MB | 16.00 MB |
+| `ktx2=0` | 48.00 MB | 48.00 MB | **36.00 MB** |
+| `ktx2=1` | **37.33 MB** | 37.33 MB | 37.33 MB |
 
-One value became three. At `maxSize=1024` the console prints one `[Texture2D] Downscaled` line
-per texture where it printed none.
+One value became three, and the arithmetic checks: three 2048² RGBA maps are 3 × 16 MiB = 48;
+capping only the external one gives 4 + 16 + 16 = 36; compressing only the external one gives
+48 − 16 + 5.33 = 37.33.
+
+Colour space, read off the material at runtime, is now correct in **both** arms — `map` = `srgb`,
+and `normalMap` / `metalnessMap` / `roughnessMap` = `NoColorSpace`, identical whichever way the
+`ktx2` flag is set. That is what makes the A/B vary a texture format and nothing else.
+
+**Method note.** The first published version of this table was measured with six scenario loads
+in one page. That accumulates: embedded textures are re-created per load and
+`unloadScenario` does not release them, and a run in that mode showed a cap apparently
+*increasing* VRAM. The numbers above come from a fresh browser per cell. The previously published
+figures (48 / 48 / 12 / 16 / 16 / 16, for the all-external configuration) match their arithmetic
+exactly — 3 × 16, 3 × 4, 3 × 5.33 — because with every map coming from `Resources` the asset cache
+returned the same objects rather than duplicating them. They were right; the method was not.
 
 **Two cells still tie, and neither is packaging:**
 
 - `maxSize=2048` cannot move a 2048×2048 source — the engine's test is strictly `>`. See S3.1;
-  it is the same situation, and the same answer.
-- The whole `ktx2=1` row is one number because `fromKTX2ArrayBuffer` never reads `maxSize`. It is
-  an engine limitation rather than packaging, written up as entry 3 of
-  [`ENGINE-GAPS.md`](ENGINE-GAPS.md). It is no longer *silent*: as of engine
-  `0.1.0-local.1787254037912` the loader warns once and its documentation states the limitation,
-  so the three flat cells now have an explanation on the console rather than being a puzzle.
+  same situation, same answer.
+- The whole `ktx2=1` row is one number because `fromKTX2ArrayBuffer` never reads `maxSize` —
+  entry 3 of [`ENGINE-GAPS.md`](ENGINE-GAPS.md). No longer silent: the loader warns once.
 
-**Re-measured against `0.1.0-local.1787254037912`** after the engine fixes landed: every cell is
-unchanged, so the table above holds for both builds. The archives were rebuilt anyway, because
-each manifest stamps the engine version it was built against and that field has to be true.
+**What the fix costs.** The cap and the format swap reach one map instead of three, so the
+effect is a third of what it would be if the engine could express linear data. That is the price
+of a correct scene and an honest A/B, and it is recoverable the day entry 5 is fixed — the same
+script moves the other two maps out with one line of its slot table.
+
+Archive after the revision: `complex_model.glb` 11 198 164 · `complex_albedo.jpg` 2 132 481 ·
+`complex_albedo.ktx2` 958 688 — 14 296 401 uncompressed, 11 483 895 as a ZIP.
 
 ---
 

@@ -5,26 +5,33 @@
 // (WebEngineTS benchmarks/run.ts) drives maxSize / warmup / KTX2 / measurement
 // from the outside. See the WebEngineTS "Single profiling system" policy.
 //
-// WHY THE TEXTURES ARE LOADED HERE RATHER THAN COMING WITH THE MODEL
-//   They used to be embedded in the GLB, and an embedded texture never reaches
-//   `Resources`: GLTFLoader hands three.js the decoded image and the engine
-//   only wraps the result. The size cap and the KTX2 swap both live on the
-//   `Resources` path — `fromArrayBuffer` and `fromKTX2ArrayBuffer`, chosen by
-//   file extension — so neither could touch this scene at all. Loading the maps
-//   as standalone files is what puts them back on that path. It is the same
-//   pattern Scene 3 already uses for its planets.
+// WHY THE BASE COLOUR IS LOADED HERE AND THE OTHER MAPS ARE NOT
+//   An embedded texture never reaches `Resources`: GLTFLoader hands three.js
+//   the decoded image and the engine only wraps the result. The size cap and
+//   the KTX2 swap both live on the `Resources` path — `fromArrayBuffer` and
+//   `fromKTX2ArrayBuffer`, chosen by file extension — so with everything
+//   embedded neither flag could touch this scene at all. Moving a map out is
+//   what puts it on that path. It is the same pattern Scene 3 uses.
 //
-//   The paths below carry NO EXTENSION on purpose. That is what lets
+//   Only the base colour moves. `Texture2D.fromArrayBuffer` tags every image it
+//   decodes as sRGB and no material setter corrects it. That is right for base
+//   colour and wrong for the normal and metallic-roughness maps, which hold
+//   linear data — decoded as sRGB they skew the normals and the metalness, and
+//   the model renders dark and blotchy. Measured: with all three external, all
+//   three came back tagged `srgb`. See entry 5 of docs/ENGINE-GAPS.md.
+//
+//   So the linear maps stay inside the GLB, where GLTFLoader assigns their
+//   colour space per slot and gets it right. The cap and the format swap reach
+//   one map instead of three — weaker, and correct. It also keeps both arms of
+//   the KTX2 A/B shading IDENTICALLY, so that flag varies a texture format and
+//   nothing else; with the normal map external it came out `srgb` at ktx2=0 and
+//   `srgb-linear` at ktx2=1, which made the A/B compare two different scenes.
+//
+//   The path below carries NO EXTENSION on purpose. That is what lets
 //   `Resources.preferExtension` pick `complex_albedo.ktx2` over
-//   `complex_albedo.jpg` without a line of this file changing — which is how
-//   the harness A/Bs compressed against uncompressed from one archive.
+//   `complex_albedo.jpg` without a line of this file changing.
 //
-//   All three maps are assigned to uv0. The model's glTF referenced
-//   TEXCOORD_1 and TEXCOORD_2 for the metallic-roughness and normal slots, but
-//   its three UV sets are bit-identical (compress_model.sh's `dedup` step
-//   collapsed them to one stored copy), so this is not a visual change.
-//
-// SETUP: assets/models/complex_model.glb  +  assets/textures/complex_*.{jpg,ktx2}
+// SETUP: assets/models/complex_model.glb  +  assets/textures/complex_albedo.{jpg,ktx2}
 // ============================================================
 
 import {
@@ -36,11 +43,14 @@ import {
 /** Path to the model in the scenario archive (no extension). */
 const MODEL_PATH = "models/complex_model";
 
-/** The material slots this model uses, and the file each one comes from. */
+/**
+ * The slots served from standalone files.
+ *
+ * Base colour only — see the header. Normal and metallic-roughness stay in the
+ * GLB because this path would tag them sRGB.
+ */
 const TEXTURE_SLOTS = [
     { path: "textures/complex_albedo", slot: "albedoTexture" },
-    { path: "textures/complex_normal", slot: "normalTexture" },
-    { path: "textures/complex_metallic", slot: "metallicTexture" },
 ] as const;
 
 export default class BenchComplexModel extends ScenarioBehaviour {
@@ -129,14 +139,15 @@ export default class BenchComplexModel extends ScenarioBehaviour {
                 );
                 return;
             }
+
             for (const material of materials) {
                 material[entry.slot] = texture;
             }
         });
 
         console.log(
-            `[Scene2] Applied ${loaded.filter(Boolean).length}/${TEXTURE_SLOTS.length} maps ` +
-            `to ${materials.size} material(s).`
+            `[Scene2] Applied ${loaded.filter(Boolean).length}/${TEXTURE_SLOTS.length} standalone ` +
+            `map(s) to ${materials.size} material(s); the linear maps came with the model.`
         );
     }
 }

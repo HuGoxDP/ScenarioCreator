@@ -283,6 +283,14 @@ always had the same defect.
    texture format. Frame time is very unlikely to move, but any wording of the form "the same
    scene with compressed textures" is not strictly true for Scene 2 until this is fixed.
 
+**What content does instead.** Benchscene2 now moves **only** the base colour out of the GLB and
+leaves the normal and metallic-roughness maps embedded, where GLTFLoader assigns their colour
+space per slot. Verified at runtime: `map` = `srgb`, the three data maps = `NoColorSpace`,
+identical in both arms of the KTX2 A/B. `deembed_textures.sh` encodes the rule — a texture may
+leave the GLB only if sRGB is its correct colour space. The cost is that `maxSize` and `ktx2`
+reach one map instead of three; the day this entry is fixed, one line of that script's slot table
+recovers the other two.
+
 **Engine-side fix:** let the caller state the intent. Either a `Texture2D` colour-space property,
 or — better, because it cannot be forgotten — have the `StandardMaterial` slot setters assign it:
 `albedoTexture` and an emissive slot take sRGB, `normalTexture`, `metallicTexture` and
