@@ -103,6 +103,33 @@ the same README defers the move ("half a day of pipeline work", not before the 2
 folders are precisely what the move deletes; that is expected, and the one-line-diff property
 makes them trivial to fold into a single parameterised source when it happens.
 
+### The scene is not drawing what the archive describes
+
+Found by looking at a rendered frame, which is the first time anyone had. Four of the seven
+`Mesh.create*` builders emit triangle winding opposite to their own vertex normals, so those
+faces are back-face culled. In `Benchscene1` that means:
+
+- **the floor has never been drawn.** It is a `createPlane`, inverted whole.
+- **three of the five object meshes** — cylinder side walls, capsules, tori — shade only their far
+  inner surfaces. Cubes and spheres are correct.
+
+Full audit, the exact defect and the engine-side fix are entry 4 of
+[`ENGINE-GAPS.md`](ENGINE-GAPS.md). Two things matter for the measurement:
+
+1. **It is not a regression.** The identical audit against `0.1.0-local.1786479071411` gives the
+   same counts, so every run ever taken on this scene saw the same geometry. Comparisons
+   *between* engine builds are unaffected.
+2. **The fill cost is not the scene's.** A frame that never rasterises the floor and shades the
+   inside of three mesh types is cheaper than the scene the archive describes. `objects`,
+   `triangles` and the transform workload are all still exactly as reported — the defect is in
+   which faces survive culling, not in what the scene contains. But wording like "a grid of
+   primitives over a floor plane" describes something the renderer never produced, and Section 5
+   should not use it until the engine is fixed and the scene re-measured.
+
+There is **no content workaround**: `doubleSided` is a field of `IShaderSource`, not of
+`StandardMaterial`, so a scenario cannot ask for both faces. Nothing in this repository can fix
+it, which is why nothing here was changed.
+
 ---
 
 ## S3.1 — the planet textures are already at the cap · **answered, no change**

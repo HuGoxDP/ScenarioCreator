@@ -19,6 +19,7 @@ for behaviour, with a behavioural check in a real browser where behaviour was th
 | 1. `PhysicMaterial.friction` never reaches a contact | `0.1.0-local.1786479071411` | **fixed** |
 | 2. `Slider` has no `setValueWithoutNotify` | `0.1.0-local.1786479071411` | **fixed** |
 | 3. `maxSize` does nothing on the KTX2 path | `0.1.0-local.1786479071411` | **half** — no longer silent, still a no-op |
+| 4. Four `Mesh.create*` primitives are wound inside out | `0.1.0-local.1787254037912` | **open** — no content workaround exists |
 
 ---
 
@@ -152,6 +153,72 @@ difference between a puzzle and a footnote.
 **What would close it:** apply the cap by selecting a smaller mip level when transcoding. KTX2
 carries a mip pyramid, so choosing a smaller base level is the natural equivalent of the canvas
 resize on the image path.
+
+---
+
+## 4. `Mesh.createCylinder`, `createCapsule`, `createTorus` and `createPlane` are wound inside out — **OPEN**
+
+**Wanted:** a primitive from `Mesh.create*` to render as a solid object.
+
+**What happens:** four of the seven builders emit triangle indices whose winding is **opposite to
+the vertex normals they store alongside them**. three.js draws with `side: FrontSide` by default,
+so those faces are back-face culled: the object is drawn only where you are looking at its far
+inner surface. On screen it reads as a hollow shell with a dark interior — or, for a plane, as
+nothing at all.
+
+**Measured**, by generating each mesh and comparing every face's geometric normal
+(`(b−a) × (c−a)`) against the mean of its three stored vertex normals:
+
+| builder | triangles | facing out | facing in | degenerate |
+|---|---|---|---|---|
+| `createCube(1)` | 12 | 12 | 0 | 0 |
+| `createSphere(0.5, 16)` | 256 | 224 | 0 | 32 |
+| `createQuad(1, 1)` | 2 | 2 | 0 | 0 |
+| `createCylinder(0.4, 1, 16)` | 64 | 32 | **32** | 0 |
+| `createCapsule(0.3, 1, 12)` | 216 | 48 | **144** | 24 |
+| `createTorus(0.4, 0.15, 16, 24)` | 768 | 0 | **768** | 0 |
+| `createPlane(4, 4)` | 2 | 0 | **2** | 0 |
+
+Narrowed by index range: in `createCylinder` it is **only the side wall** — both caps are correct,
+which is why a cylinder renders as an open tube with its lids intact. `createCapsule` is inverted
+across the hemispheres and part of the body. `createTorus` and `createPlane` are inverted whole.
+
+`createPlane` is small enough to show in full — vertices `(-2,-2,0) (2,-2,0) (-2,2,0) (2,2,0)`,
+normals `(0,0,1)`, indices `0,2,1  2,3,1`. Triangle `(0,2,1)` gives `(0,4,0) × (4,0,0) =
+(0,0,−16)`, pointing away from the stored `+Z`. The correct indices are `0,1,2  2,1,3`.
+
+**Not a regression.** The identical audit run against the previous build,
+`0.1.0-local.1786479071411`, produces exactly the same counts. Both engines have always done
+this; it simply had not been looked at.
+
+**Affected here** (production catalogue first):
+
+| scenario | primitive | what it looks like |
+|---|---|---|
+| `Molecules` | `createCylinder` bonds | bonds hollow |
+| `DNA` | `createCylinder` bases, backbone sticks | as above |
+| `Crystals` | `createCylinder` instanced bonds | as above |
+| `AtomStructure` | `createTorus` electron shells | shells invisible from most angles |
+| `solar-system-scenario` | `createTorus` orbit rings / Saturn ring | as above |
+| `Benchscene1_N*` | cylinder, capsule, torus **and the floor plane** | see below |
+| `Benchscene3_solarsystem` | `createTorus` orbit rings | as above |
+
+**No content workaround exists.** `doubleSided` is a field of `IShaderSource` — the custom-shader
+descriptor — and is not exposed on `StandardMaterial`, so a scenario cannot ask for both faces to
+be drawn. The only alternative would be for every scenario to hand-build the meshes `Mesh.create*`
+exists to provide.
+
+**Engine-side fix:** swap two indices per triangle in the four affected builders — the side-wall
+loop of `createCylinder`, the hemisphere and body loops of `createCapsule`, and the whole index
+loop of `createTorus` and `createPlane`. The audit above is worth keeping as a test: it needs no
+renderer, and it would have caught this the day the builders were written.
+
+**Consequence for the benchmark, and it is not cosmetic.** `Benchscene1`'s floor is a
+`createPlane` and has therefore never been drawn in any run, and three of its five object meshes
+are shading only their far inner surfaces. The scene is internally consistent and identical
+across engine builds, so a comparison *between* builds stands — but its fill cost is not the fill
+cost of the scene the archive describes, and any wording that calls it "a grid of primitives over
+a floor plane" is describing something the renderer never produced.
 
 ---
 
