@@ -20,6 +20,7 @@ for behaviour, with a behavioural check in a real browser where behaviour was th
 | 2. `Slider` has no `setValueWithoutNotify` | `0.1.0-local.1786479071411` | **fixed** |
 | 3. `maxSize` does nothing on the KTX2 path | `0.1.0-local.1786479071411` | **half** — no longer silent, still a no-op |
 | 4. Four `Mesh.create*` primitives are wound inside out | `0.1.0-local.1787254037912` | **open** — no content workaround exists |
+| 5. Every texture from `Resources` is tagged sRGB | `0.1.0-local.1787254037912` | **open** — no content workaround exists |
 
 ---
 
@@ -219,6 +220,73 @@ are shading only their far inner surfaces. The scene is internally consistent an
 across engine builds, so a comparison *between* builds stands — but its fill cost is not the fill
 cost of the scene the archive describes, and any wording that calls it "a grid of primitives over
 a floor plane" is describing something the renderer never produced.
+
+---
+
+## 5. Every texture loaded through `Resources` is tagged sRGB — **OPEN**
+
+**Wanted:** load a normal map or a metallic-roughness map as a standalone file and have it shade
+correctly. Those maps hold **linear data**, not colour.
+
+**What happens:** `Texture2D.fromArrayBuffer` sets `colorSpace = THREE.SRGBColorSpace`
+unconditionally, on both its branches:
+
+```js
+const threeTexture = new THREE.Texture(img);
+threeTexture.needsUpdate = true;
+threeTexture.colorSpace = THREE.SRGBColorSpace;
+```
+
+so the GPU applies an sRGB→linear decode to data that was never encoded that way. A normal map
+comes out with its X and Y skewed non-linearly; a metallic-roughness map comes out with the wrong
+metalness and roughness. On screen the model goes dark and blotchy with false metallic patches.
+
+None of the `StandardMaterial` slot setters corrects it — `set normalTexture` and
+`set metallicTexture` just forward to `setTexture("_BumpMap" / "_MetallicGlossMap", value)`.
+
+**Measured at runtime**, reading `colorSpace` off the three.js material behind Benchscene2's
+model after loading the archive:
+
+| slot | `ktx2=0` | `ktx2=1` | should be |
+|---|---|---|---|
+| `map` (albedo) | `srgb` ✓ | `srgb` ✓ | `srgb` |
+| `normalMap` | **`srgb`** | `srgb-linear` ✓ | `srgb-linear` |
+| `metalnessMap` | **`srgb`** | **`srgb`** | `srgb-linear` |
+| `roughnessMap` | **`srgb`** | **`srgb`** | `srgb-linear` |
+
+The material's `metalness` and `roughness` scalars are both 1.0, so the maps drive those channels
+completely and the wrong decode has its full effect.
+
+**The KTX2 path does not do this** — `fromKTX2ArrayBuffer` never touches `colorSpace`, so the
+container's own transfer function survives. That is why `ktx2=1` gets the normal map right (it is
+UASTC/linear) while still getting metallic-roughness wrong (encoded ETC1S/sRGB by
+`convert_to_ktx2.sh`).
+
+**No content workaround exists.** The public API has no colour-space control at all: the single
+occurrence of "sRGB" in `WebEngineTS.d.ts` is a comment about luminance coefficients. A scenario
+cannot say "this texture is data, not colour", and cannot reach the underlying three.js texture
+without touching internals.
+
+**Why it did not show before.** With textures embedded in a GLB, three.js's `GLTFLoader` assigns
+the colour space per slot — sRGB for base colour and emissive, linear for everything else. S2
+moved Benchscene2's maps out of the GLB so `maxSize` and `ktx2` could reach them, and that took
+them off the GLTF path and onto this one. The de-embedding is right and the flags now work; this
+gap is what it exposed. Benchscene3 has always been on this path for `earth_normal` and has
+always had the same defect.
+
+**Two consequences for the measurement, and the second is the serious one:**
+
+1. Scene 2's shading is wrong in both arms — appearance only. Texture count, dimensions, VRAM and
+   load time are unaffected, so every number in Table 2 stands.
+2. **The two arms of the KTX2 A/B do not shade identically.** The normal map is `srgb` at
+   `ktx2=0` and `srgb-linear` at `ktx2=1`, so the flag changes a shading input as well as a
+   texture format. Frame time is very unlikely to move, but any wording of the form "the same
+   scene with compressed textures" is not strictly true for Scene 2 until this is fixed.
+
+**Engine-side fix:** let the caller state the intent. Either a `Texture2D` colour-space property,
+or — better, because it cannot be forgotten — have the `StandardMaterial` slot setters assign it:
+`albedoTexture` and an emissive slot take sRGB, `normalTexture`, `metallicTexture` and
+`occlusionTexture` take linear. That is where the information lives.
 
 ---
 
