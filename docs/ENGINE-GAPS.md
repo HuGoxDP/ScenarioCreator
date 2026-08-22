@@ -19,8 +19,8 @@ for behaviour, with a behavioural check in a real browser where behaviour was th
 | 1. `PhysicMaterial.friction` never reaches a contact | `0.1.0-local.1786479071411` | **fixed** |
 | 2. `Slider` has no `setValueWithoutNotify` | `0.1.0-local.1786479071411` | **fixed** |
 | 3. `maxSize` does nothing on the KTX2 path | `0.1.0-local.1786479071411` | **half** — no longer silent, still a no-op |
-| 4. Four `Mesh.create*` primitives are wound inside out | `0.1.0-local.1787254037912` | **open** — no content workaround exists |
-| 5. Every texture from `Resources` is tagged sRGB | `0.1.0-local.1787254037912` | **open** — no content workaround exists |
+| 4. Four `Mesh.create*` primitives are wound inside out | `0.1.0-local.1787254037912` | **fixed** — shared registry `G1` |
+| 5. Every texture from `Resources` is tagged sRGB | `0.1.0-local.1787254037912` | **fixed** — shared registry `G3` |
 
 ---
 
@@ -157,7 +157,7 @@ resize on the image path.
 
 ---
 
-## 4. `Mesh.createCylinder`, `createCapsule`, `createTorus` and `createPlane` are wound inside out — **OPEN**
+## 4. `Mesh.createCylinder`, `createCapsule`, `createTorus` and `createPlane` are wound inside out — **FIXED**
 
 **Wanted:** a primitive from `Mesh.create*` to render as a solid object.
 
@@ -209,10 +209,21 @@ descriptor — and is not exposed on `StandardMaterial`, so a scenario cannot as
 be drawn. The only alternative would be for every scenario to hand-build the meshes `Mesh.create*`
 exists to provide.
 
-**Engine-side fix:** swap two indices per triangle in the four affected builders — the side-wall
-loop of `createCylinder`, the hemisphere and body loops of `createCapsule`, and the whole index
-loop of `createTorus` and `createPlane`. The audit above is worth keeping as a test: it needs no
-renderer, and it would have caught this the day the builders were written.
+**FIXED in `0.1.0-local.1787378941484`**, and registered as `G1` in the shared registry. The
+winding was corrected in all four builders; the engine also found a second defect in
+`createCapsule`, whose middle rings were ordered bottom-up between hemispheres ordered top-down,
+so one index grid stitched non-adjacent rings. The audit below is now pinned in the engine as
+`tests/PrimitiveWinding.test.ts`.
+
+Re-run against the fixed build — every builder, zero inverted faces:
+
+| builder | triangles | facing out | facing in |
+|---|---|---|---|
+| `createCube` / `createSphere` / `createQuad` | 12 / 256 / 2 | all | 0 |
+| `createCylinder(0.4, 1, 16)` | 64 | 64 | **0** |
+| `createCapsule(0.3, 1, 12)` | 216 | 168 (+48 degenerate) | **0** |
+| `createTorus(0.4, 0.15, 16, 24)` | 768 | 768 | **0** |
+| `createPlane(4, 4)` | 2 | 2 | **0** |
 
 **Consequence for the benchmark, and it is not cosmetic.** `Benchscene1`'s floor is a
 `createPlane` and has therefore never been drawn in any run, and three of its five object meshes
@@ -223,7 +234,7 @@ a floor plane" is describing something the renderer never produced.
 
 ---
 
-## 5. Every texture loaded through `Resources` is tagged sRGB — **OPEN**
+## 5. Every texture loaded through `Resources` is tagged sRGB — **FIXED**
 
 **Wanted:** load a normal map or a metallic-roughness map as a standalone file and have it shade
 correctly. Those maps hold **linear data**, not colour.
@@ -291,10 +302,20 @@ leave the GLB only if sRGB is its correct colour space. The cost is that `maxSiz
 reach one map instead of three; the day this entry is fixed, one line of that script's slot table
 recovers the other two.
 
-**Engine-side fix:** let the caller state the intent. Either a `Texture2D` colour-space property,
-or — better, because it cannot be forgotten — have the `StandardMaterial` slot setters assign it:
-`albedoTexture` and an emissive slot take sRGB, `normalTexture`, `metallicTexture` and
-`occlusionTexture` take linear. That is where the information lives.
+**FIXED in `0.1.0-local.1787378941484`**, and registered as `G3` in the shared registry — by the
+second route suggested here, which is the one that cannot be forgotten: the `StandardMaterial`
+slots now declare what they hold. Albedo and emission are colour; normal, metallic, occlusion and
+height are linear, matching `GLTFLoader`. Pinned by the engine's `tests/TextureColorSpace.test.ts`.
+
+Verified behaviourally: a texture that `Resources` hands back tagged `srgb` arrives on
+`normalTexture` as `NoColorSpace`. The setter overrides it, so the tag on the loaded texture no
+longer matters.
+
+**Not reverted in content, deliberately.** `Benchscene2` still moves only its base colour out of
+the GLB. The de-embedding rule — a texture may leave only if sRGB is its correct colour space —
+was written against this gap, and moving the other two maps out again is a measurement change:
+it would triple the reach of `maxSize` and `ktx2`, which is a decision for the run owner rather
+than a tidy-up. `deembed_textures.sh` needs one line of its slot table to do it.
 
 ---
 

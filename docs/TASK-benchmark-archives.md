@@ -207,6 +207,49 @@ on it.
 
 ---
 
+## Two texture files were not the format their names claimed · **fixed**
+
+Not an engine gap — a defect in this repository's own assets, found while re-checking
+[`ENGINE-GAPS.md`](ENGINE-GAPS.md) entry 5 against the fixed engine.
+
+`Resources.tryLoad(Texture2D, "textures/earth_normal")` returned **null** while `textures/earth`
+and `textures/earth_night` loaded from the same folder of the same archive. The cause was in the
+bytes:
+
+| file | claimed | actually was |
+|---|---|---|
+| `earth_normal.jpg` | JPEG | **TIFF** |
+| `saturn_ring.jpg` | JPEG | **PNG** with alpha |
+
+A browser will sniff a PNG served under a `.jpg` name and decode it anyway, so `saturn_ring`
+worked by luck. It will not decode a TIFF in an `<img>`, so **Earth has never had a normal map on
+the `.jpg` path** — in Benchscene3 or in the production `solar-system-scenario`, which ships the
+same files.
+
+`convert_to_ktx2.sh` detects format by magic bytes rather than extension and normalises through
+Pillow, which is why `earth_normal.ktx2` was always valid. That is the sharp end of it:
+
+**the `ktx2` A/B for Scene 3 differed by whether the Earth had a normal map at all.** At
+`ktx2=0` the `.jpg` failed and the slot stayed empty; at `ktx2=1` the `.ktx2` loaded and shaded.
+That is a larger discrepancy than the colour-space one it was found next to, and it silently
+favoured the compressed arm.
+
+**Fixed** in both scenarios: `earth_normal.jpg` re-encoded from the TIFF as a real JPEG (q94,
+4:4:4 — it is a normal map, so no chroma subsampling), `saturn_ring.jpg` renamed to
+`saturn_ring.png`, which is what it is. Both scenarios request these paths **extensionless**, so
+no scenario code changed; the rename does move `saturn_ring`'s asset guid, which is the documented
+limit of deriving identity from a path.
+
+Verified in a browser after the fix — `textures/earth_normal` loads at 2048×1024 where it
+returned null before, `textures/saturn_ring` loads at 2048×125, and Earth's material carries a
+`normalMap` tagged `NoColorSpace`.
+
+**Worth a pack-time check.** S4.1 already proposes a `content` section in the manifest listing
+each texture's dimensions; adding the real format, detected from magic bytes, would have caught
+both of these at build time instead of by accident.
+
+---
+
 ## Not done, and what each needs
 
 - **S3.3 — seven failed model lookups.** `Scenario.js` tries `models/<planet>` for six planets
