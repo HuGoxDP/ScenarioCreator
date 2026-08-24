@@ -68,6 +68,11 @@ script moves the other two maps out with one line of its slot table.
 Archive after the revision: `complex_model.glb` 11 198 164 · `complex_albedo.jpg` 2 132 481 ·
 `complex_albedo.ktx2` 958 688 — 14 296 401 uncompressed, 11 483 895 as a ZIP.
 
+The GLB has since grown to 15 120 096 — the embedded data maps are now lossless; see
+[the data-map section](#the-embedded-data-maps-were-lossy--fixed) below. **The VRAM table above is
+unaffected**: both encodings decode to the same 2048×2048 RGBA, and nothing moved in or out of the
+GLB.
+
 ---
 
 ## S1.1 — the count sweep could not be driven · **done**
@@ -250,6 +255,87 @@ both of these at build time instead of by accident.
 
 ---
 
+## The embedded data maps were lossy · **fixed**
+
+Also not an engine gap — this repository compressed its own model badly.
+`compress_model.sh` encoded **every** embedded texture as lossy WebP with a per-slot quality
+(q90 colour, q92 maps). That is right for a photograph and wrong for a map whose channels are
+numbers: a normal map keeps X and Y in R and G, a metallic-roughness map keeps two independent
+scalars in B and G. Lossy WebP is always YUV 4:2:0 and is tuned to hide error from the eye in a
+picture; on those channels the error survives as block-aligned noise that the shading then reads
+as geometry.
+
+Measured against the pre-compression PNGs recovered from git (`1dadd37^`, a 40 453 656-byte GLB
+carrying three 2048×2048 PNGs), max channel error / PSNR:
+
+| slot | shipped as | error | now |
+|---|---|---|---|
+| `normal` | WebP q92, 1 403 886 B | **27** / 38.1 dB | lossless, 4 979 164 B, **exact** |
+| `metallicRoughness` | WebP q92, 86 702 B | **12** / 50.5 dB | lossless, 433 356 B, **exact** |
+| `baseColor` | WebP q90 | 14 / 41.6 dB | unchanged — it is a photograph |
+
+**Quality does not rescue it.** Re-encoding the normal map at q92/q96/q99 gives 38.10/38.55/38.80
+dB: the error plateaus, because the subsampling is the floor. Only lossless removes it.
+
+**Lossless WebP, not PNG.** Both are exact; WebP is smaller here (normal 4 979 164 vs PNG
+7 177 138; metallic-roughness 433 356 vs 562 372) and stays on the `EXT_texture_webp` path the
+archive already declares, which CLAUDE.md rule 5 permits because GLTFLoader registers that
+extension unconditionally and the browser decodes it.
+
+`relossless_data_maps.sh` is the one-time repair: it recovers the originals from git rather than
+keeping a second copy of 7.7 MB of PNG in the tree, re-encodes only the data slots, refuses to
+write anything that does not round-trip byte-exactly, and refuses to run at all once no lossy data
+map is left. `compress_model.sh` was changed alongside it, so a re-run from the original cannot
+reintroduce the defect: slot → encoder is now a property of what the slot *holds*.
+
+**Cost:** GLB 11 198 164 → 15 120 096 (+3 921 932), ZIP 11 483 895 → 15 406 865. Transmission
+only — VRAM is unchanged, so no number in the S2 table moves.
+
+**The LOD ladder had the same defect and was regenerated.** `compress_model.sh`'s `LOD_RATIOS`
+mode re-encoded every image at q90 after resizing, so the coarse rungs put block noise back on top
+of a map that had just been resampled. It now reads the slot table the same way the full-detail
+pass does. Rungs, all levels lossless where the slot is data: 25% 3 158 196 → 3 421 624,
+50% 5 959 532 → 6 910 128. `manifest:verify` re-hashes clean and every level still fetches.
+
+### What the live page showed, including the part that did not reproduce
+
+Verified in headless Edge on the packaged archive, against a second archive identical except for
+the previous GLB, both posed at the same `Time.time` so the frames are comparable pixel for pixel.
+The maps were read back **off the live material** — the pixels three.js actually uploaded — and
+compared against the recovered originals:
+
+| arm | `normalTexture` | `metallicTexture` | colour space |
+|---|---|---|---|
+| previous | 2048×2048, maxErr **27**, PSNR 38.08 | maxErr **12**, PSNR 50.52 | both `NoColorSpace` |
+| rebuilt | 2048×2048, maxErr **0** | maxErr **0** | both `NoColorSpace` |
+
+So the data is exactly the original, established on a live page rather than from a file size.
+Loading the rebuilt archive twice gave a byte-identical frame, which is the noise floor the
+comparison below is measured against.
+
+**The rendered difference is real but small, and I could not reproduce visible blocking.** At the
+scenario's own camera the model covers about 96×116 px of an 800×600 frame; the two arms differ by
+at most 10/255 on 0.73% of pixels, because a 2048² map minified onto ~100 px is averaged by
+mipmapping before the error can show. Forcing the camera in until the fur fills a 900×900 frame
+raises it to maxErr 19/255, RMSE 0.57, PSNR 53.1 dB — the difference traces the fur relief, which
+is where the normal map lives, but the two close-ups are indistinguishable side by side, and so are
+8× crops of the worst 32×32 tile.
+
+A plausible mechanism for how muted it is: this material sets `KHR_materials_specular`
+`specularFactor = 0`, so the normal map perturbs diffuse shading only, where a mean error near
+2/255 does not carry.
+
+**The second UV set is not involved.** `TEXCOORD_1` in this model points at the *same accessor* as
+`TEXCOORD_0` in all four primitives (`mesh0/prim0 (65532 verts): TEXCOORD_0=acc7 | TEXCOORD_1=acc7`,
+and likewise acc11 / acc15 / acc19), so sampling with either set is identical and carrying the
+second one changes nothing on screen.
+
+The change is kept on its own merits — a data map that is not the data is wrong however little it
+shows, and the archive is a measurement input where "close enough visually" is not a criterion —
+but nothing here supports a claim that it fixed a visible artifact.
+
+---
+
 ## Not done, and what each needs
 
 - **S3.3 — seven failed model lookups.** `Scenario.js` tries `models/<planet>` for six planets
@@ -269,7 +355,7 @@ change when they are swapped:
 | | old | new |
 |---|---|---|
 | Benchscene2 id / version | `template.benchscene2.complexmodel` / `0.0.1-template` | `benchscene2-complexmodel` / `1.0.0` |
-| Benchscene2 size | 12.5 MB | 19.2 MB uncompressed (textures left the GLB) |
+| Benchscene2 size | 12.5 MB | 18.2 MB uncompressed, 15.4 MB as a ZIP (base colour left the GLB; the data maps inside it are now lossless) |
 | Benchscene1 | one `Benchscene1.zip` | four `Benchscene1_N*.zip` |
 
 Historical tables in [`PLAN.md`](PLAN.md) and

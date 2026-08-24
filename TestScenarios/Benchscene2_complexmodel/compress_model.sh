@@ -17,18 +17,37 @@
 #                               delegated to the normal texture path; the
 #                               browser does the decoding.
 #
-# MEASURED on assets/models/complex_model.glb (2026-08-11):
-#   40 453 656 -> 12 518 232 bytes (-69%). Vertex counts, primitive counts and
-#   the bounding box are unchanged; indices drop u32 -> u16 on their own once
-#   the meshes fit under 65 536 vertices.
-#   Texture fidelity vs the original PNGs, PSNR / max channel error:
-#     baseColor 41.6 dB / 14 · metallicRoughness 50.7 dB / 12 · normal 38.1 dB / 26
-#   The normal map is the weakest and stays that way on purpose: lossy WebP is
-#   always YUV 4:2:0, so its error plateaus near 38 dB no matter the quality
-#   (measured q92/q96/q99 -> 38.10/38.55/38.80 dB). Lossless would fix it at
-#   +3.57 MB, a 29% larger file. This material sets KHR_materials_specular
-#   specularFactor = 0, so the normal map only shades diffuse light, where a
-#   mean error of 2/255 does not show.
+# COLOUR IS LOSSY, DATA IS NOT
+#   The encoder is chosen by what the slot *holds*, not by what it looks like.
+#   Base colour and emission are photographs and tolerate YUV 4:2:0. A normal map
+#   keeps X and Y in R and G, and a metallic-roughness map keeps two independent
+#   scalars in B and G; lossy compression is tuned to hide error from the eye in
+#   a picture, and on those channels it lands as blocking that the shading then
+#   amplifies. So DATA_SLOTS below encode lossless, at any file size.
+#
+#   This reverses an earlier decision recorded here, that q92 was good enough for
+#   the normal map because the material sets specularFactor = 0 and so shades
+#   only diffuse light. It is not: 27/255 of error on a normal's X is a real
+#   deviation, and it clusters on VP8 block boundaries rather than spreading.
+#   The model already in the tree was repaired in place by relossless_data_maps.sh;
+#   this change is what stops a re-run from undoing that.
+#
+# MEASURED on assets/models/complex_model.glb (2026-08-11, texture rows redone
+# 2026-08-24 after the lossless change):
+#   40 453 656 -> 12 518 232 bytes (-69%) with everything lossy;
+#   15 120 096 bytes with the data maps lossless (-63%). Vertex counts, primitive
+#   counts and the bounding box are unchanged; indices drop u32 -> u16 on their
+#   own once the meshes fit under 65 536 vertices.
+#
+#   Texture fidelity vs the original PNGs, max channel error / PSNR:
+#     baseColor           lossy q90     14 / 41.6 dB
+#     metallicRoughness   lossless       0 / exact   (was 12 / 50.5 dB)
+#     normal              lossless       0 / exact   (was 27 / 38.1 dB)
+#   Quality does not rescue the lossy normal map — its error plateaus near 38 dB
+#   whatever the setting (measured q92/q96/q99 -> 38.10/38.55/38.80 dB), because
+#   WebP's lossy mode is always YUV 4:2:0. Only lossless fixes it. Cost: +3.92 MB
+#   in the archive, and nothing in VRAM — both encodings decode to the same
+#   2048x2048 RGBA.
 #
 # TOOLING
 #   - npx @gltf-transform/cli (downloaded on demand)
@@ -68,7 +87,8 @@ GT="npx --yes @gltf-transform/cli@4"
 # This mode runs on the ALREADY-COMPRESSED model, so it deliberately skips the
 # re-quantize guard below — quantized input is exactly what it expects.
 #
-# MEASURED on the compressed complex_model.glb (2026-08-12):
+# MEASURED on the compressed complex_model.glb (2026-08-12, before the data maps
+# were made lossless — the sizes below are of the all-lossy ladder):
 #   436 810 triangles / 12 518 232 bytes
 #     -> 50%: 218 402 tris / 8 111 952 bytes
 #     -> 25%: 109 195 tris / 5 826 336 bytes
@@ -114,16 +134,49 @@ if [[ -n "${LOD_RATIOS:-}" ]]; then
         rm -rf "$WORK/u"; mkdir -p "$WORK/u"
         $GT copy "$WORK/q.glb" "$WORK/u/m.gltf"
         python - "$WORK/u" "$pct" <<'PY'
-import glob, os, sys
+import json, os, sys
 from PIL import Image
+
 root, pct = sys.argv[1], int(sys.argv[2])
-for f in glob.glob(os.path.join(root, "*.webp")):
+g = json.load(open(os.path.join(root, "m.gltf")))
+
+# Same rule as the full-detail pass: a resized data map is still data. Halving
+# it is a deliberate, documented reduction; adding block noise on top of it is
+# not, and a coarse normal map is sampled at a coarser mip anyway, which spreads
+# the error rather than hiding it.
+DATA_SLOTS = {"normalTexture", "metallicRoughnessTexture", "occlusionTexture"}
+
+slot_of = {}
+for mat in g.get("materials", []):
+    pbr = mat.get("pbrMetallicRoughness", {})
+    for slot, ref in (("baseColorTexture", pbr.get("baseColorTexture")),
+                      ("metallicRoughnessTexture", pbr.get("metallicRoughnessTexture")),
+                      ("normalTexture", mat.get("normalTexture")),
+                      ("occlusionTexture", mat.get("occlusionTexture")),
+                      ("emissiveTexture", mat.get("emissiveTexture"))):
+        if ref is None:
+            continue
+        tex = g["textures"][ref["index"]]
+        src = tex.get("source")
+        if src is None:
+            src = tex.get("extensions", {}).get("EXT_texture_webp", {}).get("source")
+        slot_of[src] = slot
+
+for i, img in enumerate(g.get("images", [])):
+    uri = img.get("uri")
+    if not uri or not uri.endswith(".webp"):
+        continue
+    f = os.path.join(root, uri)
     im = Image.open(f)
     w, h = im.size
     nw, nh = max(1, round(w * pct / 100)), max(1, round(h * pct / 100))
     before = os.path.getsize(f)
-    im.resize((nw, nh), Image.LANCZOS).save(f, "WEBP", quality=90, method=6)
-    print(f"    {os.path.basename(f)}: {w}x{h} -> {nw}x{nh}, "
+    slot = slot_of.get(i)
+    lossless = slot in DATA_SLOTS
+    opts = {"lossless": True} if lossless else {"quality": 90}
+    im.resize((nw, nh), Image.LANCZOS).save(f, "WEBP", method=6, **opts)
+    print(f"    [{slot or 'unslotted'}] {uri}: {w}x{h} -> {nw}x{nh} "
+          f"({'lossless' if lossless else 'q90'}), "
           f"{before} -> {os.path.getsize(f)} bytes")
 PY
         $GT copy "$WORK/u/m.gltf" "$WORK/final.glb"
@@ -185,9 +238,10 @@ root = sys.argv[1]
 gltf_path = os.path.join(root, "model.gltf")
 g = json.load(open(gltf_path))
 
-# Per-slot quality: colour tolerates more loss than the channel-packed maps.
-SLOT_QUALITY = {"baseColorTexture": 90, "metallicRoughnessTexture": 92,
-                "normalTexture": 92, "_default": 92}
+# Slots that hold DATA rather than a picture. These are encoded lossless; see
+# the header. Everything else is a photograph and takes a quality.
+DATA_SLOTS = {"normalTexture", "metallicRoughnessTexture", "occlusionTexture"}
+SLOT_QUALITY = {"baseColorTexture": 90, "emissiveTexture": 90, "_default": 92}
 
 slot_of = {}
 for mat in g.get("materials", []):
@@ -206,10 +260,14 @@ for i, img in enumerate(g.get("images", [])):
         continue
     src = os.path.join(root, uri)
     dst_name = os.path.splitext(uri)[0] + ".webp"
-    q = SLOT_QUALITY.get(slot_of.get(i), SLOT_QUALITY["_default"])
+    slot = slot_of.get(i)
+    lossless = slot in DATA_SLOTS
+    opts = ({"lossless": True} if lossless
+            else {"quality": SLOT_QUALITY.get(slot, SLOT_QUALITY["_default"])})
     Image.open(src).convert("RGB").save(
-        os.path.join(root, dst_name), "WEBP", quality=q, method=6)
-    print(f"    [{slot_of.get(i, 'unslotted')}] {uri} -> {dst_name} (q{q}) "
+        os.path.join(root, dst_name), "WEBP", method=6, **opts)
+    how = "lossless" if lossless else f"q{opts['quality']}"
+    print(f"    [{slot or 'unslotted'}] {uri} -> {dst_name} ({how}) "
           f"{os.path.getsize(src)} -> {os.path.getsize(os.path.join(root, dst_name))}")
     img["uri"] = dst_name
     img["mimeType"] = "image/webp"
