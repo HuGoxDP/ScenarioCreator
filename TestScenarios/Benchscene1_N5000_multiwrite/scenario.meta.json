@@ -1,0 +1,9 @@
+{
+  "id": "benchscene1-n5000-multiwrite",
+  "name": "Benchscene 1 — Primitives, N=5000, three transform writes",
+  "description": "Grid of 5000 untextured primitives over a floor plane, three transform writes per object per frame (localPosition + localRotation + localScale). Identical to benchscene1-n5000 in count, meshes, materials, lights and camera; only the per-frame transform workload differs. Task S1.2: the axis that governs write coalescing is writes per transform per frame, not the fraction of the scene left static.",
+  "category": "test",
+  "version": "1.0.0",
+  "contentVersion": 1,
+  "_comment": "Second point on the write-count axis for Table 1; Benchscene1_N5000 is the first at one write. By the cost model in Transform.ts the coalescer trades W immediate copies for 3 copies plus set bookkeeping, so break-even is W=4 and this archive at W=3 is expected to show the dirty=1 penalty shrinking towards zero rather than a win — see the header of scripts/Scenario.ts. Deliberately NOT taken past break-even: WebEngineTS-Benchmarks/tasks/scenariocreator.md S1.2 forbids adding writes to make the optimization look good. Note the name does not match check-matrix.mjs's /Benchscene1_N(\\d+)\\.zip/, so its object-count assertion skips this archive; the count is still in the objects fingerprint column. No streaming.priorities block: the scenario has no assets at all."
+}

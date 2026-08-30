@@ -31,6 +31,22 @@
 //   `Resources.preferExtension` pick `complex_albedo.ktx2` over
 //   `complex_albedo.jpg` without a line of this file changing.
 //
+// WHY THE ORIENTATION IS SET BELOW
+//   Moving a map out of the GLB changes its UV orientation as well as its
+//   colour space. glTF puts the UV origin at the TOP-left, so GLTFLoader
+//   uploads every texture it creates with `flipY = false`;
+//   `Texture2D.fromArrayBuffer` leaves three.js's default `flipY = true` in
+//   place. A map that renders correctly embedded therefore arrives UPSIDE DOWN
+//   once it is served as a standalone file. On this model's colour map — a
+//   tightly packed atlas of fur swatches separated by black gutters — a
+//   vertical flip lands a different swatch on every surface, and the pug comes
+//   out dark and covered in black patches. See entry 6 of docs/ENGINE-GAPS.md.
+//
+//   `Texture.flipVertically` is the engine's answer to that: content states the
+//   orientation it wants. The two conventions are NOT unified — a KTX2 texture
+//   is always `false` because block-compressed data cannot be flipped on upload
+//   at all — so this stays until `unity-coordinates-plan.md` lands.
+//
 // SETUP: assets/models/complex_model.glb  +  assets/textures/complex_albedo.{jpg,ktx2}
 // ============================================================
 
@@ -140,6 +156,8 @@ export default class BenchComplexModel extends ScenarioBehaviour {
                 return;
             }
 
+            BenchComplexModel._matchGltfOrientation(texture);
+
             for (const material of materials) {
                 material[entry.slot] = texture;
             }
@@ -149,5 +167,24 @@ export default class BenchComplexModel extends ScenarioBehaviour {
             `[Scene2] Applied ${loaded.filter(Boolean).length}/${TEXTURE_SLOTS.length} standalone ` +
             `map(s) to ${materials.size} material(s); the linear maps came with the model.`
         );
+    }
+
+    /**
+     * Uploads a standalone map the way GLTFLoader uploads an embedded one.
+     *
+     * glTF UV space has its origin at the top-left, so every texture the model
+     * brought with it is uploaded `flipY = false`. `Texture2D.fromArrayBuffer`
+     * keeps three.js's `flipY = true` default, so a de-embedded map is sampled
+     * upside down against UVs authored for the other convention.
+     *
+     * Set unconditionally, and that is the point: the KTX2 variant already
+     * arrives `false` — block-compressed data cannot be flipped on upload — so
+     * this is a no-op there. Both arms of the KTX2 A/B end up in one
+     * orientation, which is what lets that flag vary a texture format and
+     * nothing else. A branch on "did we get a .ktx2?" would reintroduce exactly
+     * the arm-dependent difference the header argues against.
+     */
+    private static _matchGltfOrientation(texture: Texture2D): void {
+        texture.flipVertically = false;
     }
 }

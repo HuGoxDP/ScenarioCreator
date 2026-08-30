@@ -45,6 +45,17 @@
 #   source. A jpg→ktx2 number and a webp→ktx2 number are not the same quantity.
 #   The cost is one extra lossy generation, measured below.
 #
+# THE OTHER THING LEAVING THE GLB CHANGES: ORIENTATION
+#   Colour space is not the only property GLTFLoader sets and `Resources` does
+#   not. glTF's UV origin is top-left, so GLTFLoader uploads with
+#   `flipY = false`; `Texture2D.fromArrayBuffer` keeps three.js's `true`. A map
+#   that moves out therefore arrives UPSIDE DOWN, and on an atlas like this
+#   model's — fur swatches packed against black gutters — that reads as a dark,
+#   blotchy model rather than as an obvious flip. The scenario corrects it in
+#   `_matchGltfOrientation`; see entry 6 of docs/ENGINE-GAPS.md. Nothing in this
+#   script needs to change for it, but anything moved out from here needs that
+#   correction applying to it too.
+#
 # WHAT IS DELIBERATELY NOT CHANGED
 #   The meshes keep every UV set they had. Pruning unused attributes would
 #   shrink the vertex buffers and move the geometry side of every Scene 2

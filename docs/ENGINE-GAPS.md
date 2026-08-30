@@ -21,6 +21,7 @@ for behaviour, with a behavioural check in a real browser where behaviour was th
 | 3. `maxSize` does nothing on the KTX2 path | `0.1.0-local.1786479071411` | **half** — no longer silent, still a no-op |
 | 4. Four `Mesh.create*` primitives are wound inside out | `0.1.0-local.1787254037912` | **fixed** — shared registry `G1` |
 | 5. Every texture from `Resources` is tagged sRGB | `0.1.0-local.1787254037912` | **fixed** — shared registry `G3` |
+| 6. `Resources` uploads textures `flipY = true`, glTF's opposite | `0.1.0-local.1787408668962` | **half** — shared registry `G4`; sayable, not unified |
 
 ---
 
@@ -316,6 +317,108 @@ the GLB. The de-embedding rule — a texture may leave only if sRGB is its corre
 was written against this gap, and moving the other two maps out again is a measurement change:
 it would triple the reach of `maxSize` and `ktx2`, which is a decision for the run owner rather
 than a tidy-up. `deembed_textures.sh` needs one line of its slot table to do it.
+
+---
+
+## 6. Textures from `Resources` are uploaded `flipY = true`, glTF's opposite — **HALF FIXED**
+
+Sayable through the public API. Not unified.
+
+The orientation twin of entry 5, found the same way and by the same move. Entry 5 checked what
+colour space a de-embedded map arrives in; nobody checked which way up it arrives.
+
+**Wanted:** load a map as a standalone file and have it sample the same way it did when it was
+embedded in the GLB — same UVs, same model, same pixels, same picture.
+
+**What happens:** it is sampled **upside down**. glTF puts the UV origin at the top-left, so
+`GLTFLoader` sets `texture.flipY = false` on every texture it creates
+(`three/examples/jsm/loaders/GLTFLoader.js:3330`). `Texture2D.fromArrayBuffer` never touches
+`flipY`, so three.js's default of `true` (`three/src/textures/Texture.js:281`) survives:
+
+```js
+const threeTexture = new THREE.Texture(img);
+threeTexture.needsUpdate = true;
+threeTexture.colorSpace = THREE.SRGBColorSpace;   // the only property it sets
+```
+
+Both branches of `fromArrayBuffer` are affected — the `CanvasTexture` branch taken when `maxSize`
+resizes the image inherits the same default.
+
+**The KTX2 path does not do this.** `fromKTX2ArrayBuffer` produces a `CompressedTexture`, whose
+constructor forces `this.flipY = false` (`three/src/textures/CompressedTexture.js:67`) because
+block-compressed data cannot be flipped on upload. So the defect is on the image path only —
+which is what makes it a measurement problem and not merely a cosmetic one.
+
+**Measured at runtime**, Benchscene2 loaded from its archive four ways in one browser session,
+pose frozen (`Time.timeScale = 0; Time._time = 2`) so the frames are directly comparable:
+
+| albedo comes from | class | `flipY` | max channel Δ vs embedded |
+|---|---|---|---|
+| the GLB (`GLTFLoader`) | `Texture` | `false` | 0 — reference |
+| `complex_albedo.jpg` (`fromArrayBuffer`) | `Texture` | **`true`** | **173** |
+| `complex_albedo.jpg`, `flipY` forced `false` | `Texture` | `false` | **5** |
+| `complex_albedo.ktx2` (`fromKTX2ArrayBuffer`) | `CompressedTexture` | `false` | 23 |
+
+5 is JPEG q92 re-encode noise and 23 is UASTC transcode noise; 173 is a different picture. The
+normal and metallic-roughness maps stay embedded and read `false` in every row, so the flip is
+isolated to the one map that moved.
+
+**Why it is so visible on this model.** `complex_albedo` is a tightly packed atlas of fur swatches
+separated by black gutters, not a contiguous layout. A vertical flip does not tilt the texture —
+it lands a *different swatch*, often a gutter, on every surface. The pug renders dark and covered
+in black patches. A model with a contiguous UV layout would show something subtler and be easier
+to mistake for a lighting problem.
+
+**The serious consequence: the two arms of the KTX2 A/B were not the same scene.** `ktx2=0` took
+the flipped image path and `ktx2=1` took the correctly-oriented compressed path, so the flag
+changed the picture, not just the texture format — max channel Δ **173** between the arms. This is
+the identical failure mode entry 5 documented for colour space, in a different property, and it
+survived that fix because the fix declared colour space per material slot and said nothing about
+orientation. After the workaround below the two arms differ by **22**, which is transcode noise.
+
+**What content does instead.** `Benchscene2_complexmodel/scripts/Scenario.ts` states the
+orientation in `_matchGltfOrientation`, before assigning the map:
+
+```ts
+texture.flipVertically = false;
+```
+
+Set unconditionally rather than only on the image path. The KTX2 arm already reads `false`, so it
+is a no-op there — verified pixel-identical, max Δ 0 — and both arms stay in one orientation. A
+branch on which variant loaded would put the arm-dependent difference straight back.
+
+**HALF FIXED in `0.1.0-local.1787597032574`** (installed here 2026-08-24 21:44), registered as
+`G4` in the shared registry. `Texture.flipVertically` is a public getter/setter over the upload
+flag, so content can say which convention it wants:
+
+```ts
+public set flipVertically(value: boolean) {
+    if (this._threeTexture.flipY === value) return;
+    this._threeTexture.flipY = value;
+    this._threeTexture.needsUpdate = true;
+}
+```
+
+That closes the part of this entry that mattered for **rule 1**. The first workaround here reached
+past the API into the three.js texture via `_threeTextureForUpload()`; it no longer has to, and the
+scenario now uses the property. Nothing else about the fix changed — the same call site, the same
+value, still unconditional.
+
+**What is still open: the convention itself.** The engine has not unified on one origin, and the
+default is unchanged — `fromArrayBuffer` still uploads `true`, `GLTFLoader` and KTX2 still `false`.
+So the trap is intact for the next scenario that de-embeds a map: it will render upside down, and
+nothing will say so. Only the *remedy* is now first-class.
+
+**What would close it fully:** move the engine to a top-left origin so every path agrees. That
+means all twelve primitive UV generators as well, which changes rendered output in content nobody
+inspects before shipping — hence it is staged for after the submission, in
+`WebEngineTS/design/unity-coordinates-plan.md`. `flipVertically` survives that change; needing it
+becomes the exception rather than the rule.
+
+**Measurement provenance.** Found and measured against the build installed before that update —
+`0.1.0-local.1787408668962`, the stamp the reporting run's own overlay showed, and whose `Texture`
+in `WebEngineTS.d.ts` had no `flipVertically`. The 173 / 5 / 23 figures above are from that build.
+Re-verified after the update: unchanged.
 
 ---
 

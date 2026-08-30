@@ -114,6 +114,58 @@ breaks even nearer three or four. That is a property of this scene and it has de
 been tuned away. Making the workload representative is S1.2, and the task file is right that it
 needs a decision about what the scene is meant to represent before anyone touches it.
 
+### S1.2 — a second point on the write-count axis · **archive built, result predicted**
+
+`Benchscene1_N5000_multiwrite.zip` is `Benchscene1_N5000` with `update()` writing
+`localPosition`, `localRotation` and `localScale` instead of `localRotation` alone. Count,
+spacing, meshes, materials, lights, camera and floor are unchanged, so a diff isolates the
+transform workload. The bob is ±0.25 and the scale pulse ±8%, small enough to leave triangles,
+draw calls and fill cost where they were.
+
+**The axis is writes per transform per frame, not the fraction of the scene left static.**
+`Transform._syncAllDirty()` runs before render in both modes and walks the dirty set; a transform
+nobody writes never enters that set and costs nothing either way. Saving appears only where
+several writes to one transform collapse into a single sync. A "5% of objects move" variant would
+measure nothing, which is why it was not built.
+
+**The cost model, from `Transform.ts`.** Each setter does `this._localX.copy(value)` and then
+either copies straight into Three.js (`dirty=0`) or calls `_markDirty()` (`dirty=1`). The flush
+copies **all three** of position, rotation and scale regardless of how many were written:
+
+| writes/transform/frame | `dirty=0` | `dirty=1` | expected |
+|---|---|---|---|
+| 1 — `Benchscene1_N5000` | 1 copy | 1 set insert + 3 copies | clear loss (measured −13% on the 3050) |
+| **3 — this archive** | 3 copies | 1 set insert + 3 copies | **loss shrinks to the bookkeeping, not a win** |
+| 4 | 4 copies | 1 set insert + 3 copies | about break-even |
+| 6 | 6 copies | 1 set insert + 3 copies | clear win |
+
+**So break-even is four writes, and this archive has three.** It is expected to show the `dirty=1`
+penalty collapsing towards zero, not the optimization winning. Two points — W=1 and W=3 — give the
+direction and the slope, which is what the paper needs to replace the "proportional to how much of
+the scene is static" wording; a *win* would need W≥5, i.e. writing one property more than once per
+frame, and S1.2 forbids adding writes to cross the break-even point. That would need a content
+justification, not a benchmark one.
+
+**Verified at runtime**, setters wrapped with counters, totals divided by engine frames × movers:
+
+| archive | objects | `localPosition` | `localRotation` | `localScale` | world-space | writes/object/frame |
+|---|---|---|---|---|---|---|
+| `Benchscene1_N5000` | 5004 | 0 | 55 000 | 0 | 0 | **1.000** |
+| `Benchscene1_N5000_multiwrite` | 5004 | 55 000 | 55 000 | 55 000 | 0 | **3.000** |
+
+Both over 11 engine frames × 5000 movers. **Zero world-space writes in either**, so neither hits
+the second trap S1.2 names — reading world `position`/`rotation` or calling `translate()` forces a
+flush of that transform and turns the batching into pure overhead.
+
+Deterministic: two independent loads with the pose frozen at `Time.time = 2` produce
+**byte-identical frames** for both archives.
+
+**Not wired into the harness here.** `matrices.ts` builds Scene 1 URLs with
+`` `/scenarios/Benchscene1_N${count}.zip` ``, which cannot express this name, so adding the row is
+a change in WebEngineTS-Benchmarks. Note also that `check-matrix.mjs`'s object-count assertion
+matches `/Benchscene1_N(\d+)\.zip/` and will silently skip this archive — the count is still in the
+`objects` fingerprint column, but the automatic check is not covering it until that regex widens.
+
 ### Note on where this work belongs
 
 `WebEngineTS-Benchmarks/tasks/README.md` answers the approach question plainly — the benchmark
