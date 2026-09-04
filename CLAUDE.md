@@ -8,7 +8,6 @@ Loaded from a directory outside this repository, so every project's session sees
 ecosystem map and the same live status. Edit those files rather than duplicating them here.
 
 @../.claude-shared/ECOSYSTEM.md
-@../.claude-shared/PAPER-STATUS.md
 @../.claude-shared/ENGINE-GAPS.md
 
 
@@ -36,7 +35,7 @@ easy to break and the reasons behind them.
 ## Ecosystem position
 
 This repo is the **content producer** of a four-repo ecosystem (all under
-`C:\Users\Work\WebstormProjects\`):
+`C:\Users\HuGox\WebstormProjects\`):
 
 - **WebEngineTS** — the 3D engine. Consumed here as a packed tarball
   (`WebEngineTS-0.1.0.tgz`, a `file:` dependency) purely so scenario TypeScript can compile
@@ -212,7 +211,7 @@ image use `FORCE=1` or the archive will ship the stale encode.
 ## Known gaps
 
 - **No unit tests.** There is no test runner. What exists instead is four verification layers,
-  all runnable and all used to check the work in `docs/PLAN.md`:
+  all runnable and all used to check the work in `../.claude-shared/PLAN.md`:
   `npm run manifest:verify` (every file a manifest references exists and still hashes to what
   was recorded), `manifest:verify-fetch` (the engine's own `StreamingAssetSource` can load every
   manifest over HTTP, including selecting individual LOD levels), `manifest:verify-render`
@@ -227,7 +226,7 @@ image use `FORCE=1` or the archive will ship the stale encode.
 
 ## Open work
 
-[`docs/PLAN.md`](docs/PLAN.md) is the tracker: P0 (compress content), P1 (emit a manifest),
+[`../.claude-shared/PLAN.md`](../.claude-shared/PLAN.md) is the tracker: P0 (compress content), P1 (emit a manifest),
 P2 (real metadata) and P4 (housekeeping) are done; P3 (LOD variants) is built for textures and
 meshes, with only its VRAM criterion outstanding. Every remaining item needs something outside
 this repository — a real GPU, or a platform that reads manifests.

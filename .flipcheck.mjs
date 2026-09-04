@@ -23,7 +23,7 @@ const rootDir = process.cwd();
 const zipPath = path.join(rootDir, "ReleaseScenarios", "test", "Benchscene2_complexmodel.zip");
 const engineBundle = path.join(rootDir, "node_modules", "WebEngineTS", "dist", "WebEngineTS.standalone.js");
 const basisDir = path.join(
-    "C:", "Users", "Work", "WebstormProjects", "WebEngineTS",
+    "C:", "Users", "HuGox", "WebstormProjects", "WebEngineTS",
     "node_modules", "three", "examples", "jsm", "libs", "basis"
 );
 const outDir = path.join(rootDir, ".tmpimg", "flip");

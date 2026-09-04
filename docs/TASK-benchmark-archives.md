@@ -410,7 +410,7 @@ change when they are swapped:
 | Benchscene2 size | 12.5 MB | 18.2 MB uncompressed, 15.4 MB as a ZIP (base colour left the GLB; the data maps inside it are now lossless) |
 | Benchscene1 | one `Benchscene1.zip` | four `Benchscene1_N*.zip` |
 
-Historical tables in [`PLAN.md`](PLAN.md) and
+Historical tables in [`../../.claude-shared/PLAN.md`](../../.claude-shared/PLAN.md) and
 [`TASK-rebuild-and-republish.md`](TASK-rebuild-and-republish.md) still say
 `Benchscene1_primitives`. They are records of measurements actually taken against that archive
 and were left alone; renaming them would falsify the record.
