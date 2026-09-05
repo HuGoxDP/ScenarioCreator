@@ -226,7 +226,10 @@ export class HelixBuilder {
 
     private _makePick(stick: GameObject): GameObject {
         const go = new GameObject("Pick");
-        go.transform.parent = stick.transform;
+        // worldPositionStays = false: the two callers differ in whether the stick
+        // is already oriented, and the default would hand the pick the inverse of
+        // whatever rotation it found, leaving it square to the world.
+        go.transform.setParent(stick.transform, false);
         // The stick is scaled (radius, length, radius); a child at the tip in
         // local space rides along with it for free.
         go.transform.localPosition = new Vector3(0, 0.42, 0);
