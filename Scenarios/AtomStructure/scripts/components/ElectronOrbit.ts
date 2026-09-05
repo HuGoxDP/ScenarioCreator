@@ -6,9 +6,9 @@ import { ScriptableBehaviour, Vector3, Time } from "WebEngineTS";
  * Carries one electron around its shell.
  *
  * The electron is parented to a shell GameObject that holds the shell's tilt,
- * so this only has to move it in that object's local XY plane — the same plane
- * `Mesh.createTorus` builds its ring in. Tilt the parent and ring and electron
- * stay together.
+ * so this only has to move it in that object's local XZ plane — the plane
+ * `Mesh.createTorus` builds its ring in, Y-up as Unity has it and not the XY of
+ * `THREE.TorusGeometry`. Tilt the parent and ring and electron stay together.
  *
  * Angles are kept in degrees to match the rest of the engine's rotation API.
  */
@@ -29,7 +29,7 @@ export class ElectronOrbit extends ScriptableBehaviour {
 
         this.angle = (this.angle + this.speed * Time.deltaTime) % 360;
         const rad = this.angle * Math.PI / 180;
-        this._position.set(Math.cos(rad) * this.radius, Math.sin(rad) * this.radius, 0);
+        this._position.set(Math.cos(rad) * this.radius, 0, Math.sin(rad) * this.radius);
         this.transform.localPosition = this._position;
     }
 }

@@ -218,16 +218,23 @@ export class AtomBuilder {
             const tilt = SHELL_TILT[i] ?? SHELL_TILT[SHELL_TILT.length - 1];
             shell.transform.localRotation = Quaternion.euler(tilt[0], tilt[1], tilt[2]);
 
-            // The ring: createTorus builds in the XY plane, which is the plane
+            // The ring: createTorus builds in the XZ plane, which is the plane
             // ElectronOrbit moves its electron in. They share the parent's tilt.
+            //
+            // Parented with worldPositionStays = false throughout. The shell is
+            // already tilted by the time its children are made, and the default
+            // -- Unity's, which keeps a child's world pose -- would bake the
+            // inverse of that tilt into each child and cancel it. The electrons
+            // escaped it only because ElectronOrbit rewrites localPosition every
+            // frame; the ring, being a static mesh, was left lying flat.
             const ring = new GameObject("Ring");
-            ring.transform.parent = shell.transform;
+            ring.transform.setParent(shell.transform, false);
             ring.addComponent(MeshFilter).sharedMesh = this._ring(radius);
             ring.addComponent(MeshRenderer).sharedMaterial = this._ringMat;
 
             for (let e = 0; e < count; e++) {
                 const go = new GameObject("electron");
-                go.transform.parent = shell.transform;
+                go.transform.setParent(shell.transform, false);
                 go.transform.localScale = new Vector3(ELECTRON_RADIUS, ELECTRON_RADIUS, ELECTRON_RADIUS);
 
                 go.addComponent(MeshFilter).sharedMesh = this._particleMesh;
