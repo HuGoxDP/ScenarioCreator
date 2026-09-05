@@ -81,6 +81,7 @@ export default class ProteinSynthesis extends ScenarioBehaviour {
     private _rnaLine!: UIText;
     private _caretLine!: UIText;
     private _pickText!: UIText;
+    private _pickPanel!: GameObject;
     private _hintText!: UIText;
     private readonly _codonCells = new Map<string, UIText>();
 
@@ -212,7 +213,7 @@ export default class ProteinSynthesis extends ScenarioBehaviour {
 
         this._refreshStrip();
         this._refreshCodonTable();
-        this._pickText.text = "";
+        this._setPickText("");
     }
 
     private _applyTranscription(): void {
@@ -320,29 +321,32 @@ export default class ProteinSynthesis extends ScenarioBehaviour {
 
         const ray = this._camera.camera.screenPointToRay(Input.mousePosition);
         if (!Physics.raycast(ray, this._hit)) {
-            this._pickText.text = "";
+            this._setPickText("");
             return;
         }
 
         const go = this._hit.gameObject;
         const ref = go ? this._refs.get(go) : undefined;
         if (!ref) {
-            this._pickText.text = "";
+            this._setPickText("");
             return;
         }
 
         if (ref.strand === "mrna") {
             const source = this._coding[ref.index];
-            this._pickText.text = `мРНК, основа ${ref.index + 1}: ${ref.base} — ${BASE_NAME[ref.base]}`
-                + (ref.base === "U" ? `   (замість ${source} кодуючого ланцюга)` : "");
+            this._setPickText(
+                `мРНК, основа ${ref.index + 1}: ${ref.base} — ${BASE_NAME[ref.base]}`
+                + (ref.base === "U" ? ` (замість ${source} кодуючого ланцюга)` : ""),
+            );
             return;
         }
 
         const partner = ref.strand === "coding" ? this._template[ref.index] : this._coding[ref.index];
         const strand = ref.strand === "coding" ? "кодуючий" : "матричний";
-        this._pickText.text =
+        this._setPickText(
             `${strand} ланцюг, основа ${ref.index + 1}: ${ref.base} — ${BASE_NAME[ref.base]}. `
-            + `Пара: ${partner} (${BASE_NAME[partner]}), ${bondCount(ref.base)} водневі зв'язки.`;
+            + `Пара: ${partner} (${BASE_NAME[partner]}), ${bondCount(ref.base)} водневі зв'язки.`,
+        );
     }
 
     private _toggleAuto(): void {
@@ -497,12 +501,13 @@ export default class ProteinSynthesis extends ScenarioBehaviour {
         this._rnaLine = line(92, UI.accent);
         this._caretLine = line(76, new Color(1, 0.85, 0.35, 1));
 
-        makePanel(canvas, { anchor: "bottom-center", y: 40, width: 900, height: 24 });
+        this._pickPanel = makePanel(canvas, { anchor: "bottom-center", y: 40, width: 900, height: 24 });
         this._pickText = makeLabel(canvas, {
             anchor: "bottom-center", y: 44, width: 880, height: 18,
             text: "", fontSize: 12, color: UI.accent, wordWrap: false,
             align: TextAlignment.Center, valign: VerticalAlignment.Middle,
         });
+        this._setPickText("");
 
         this._hintText = makeLabel(canvas, {
             anchor: "bottom-center", y: 14, width: 1000, height: 18,
@@ -547,5 +552,14 @@ export default class ProteinSynthesis extends ScenarioBehaviour {
                 : isStop(codon) ? new Color(0.85, 0.5, 0.5, 1) : UI.textDim;
             label.fontSize = isCurrent ? 12 : 11;
         }
+    }
+
+    /**
+     * Writes the clicked-base readout, hiding its panel when there is nothing to
+     * report -- an empty label still leaves a painted background behind.
+     */
+    private _setPickText(text: string): void {
+        this._pickText.text = text;
+        this._pickPanel.setActive(text.length > 0);
     }
 }
