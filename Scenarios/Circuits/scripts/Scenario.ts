@@ -234,21 +234,47 @@ export default class Circuits extends ScenarioBehaviour {
         }
 
         this._scale.set(0.14, 0.14, 0.14);
+
+        // Distance covered by the wires already placed, so the carrier pattern
+        // runs along the whole path rather than restarting on each wire.
+        let travelled = 0;
+
         for (const wire of this._layout.wires) {
             const current = Math.abs(this._currentOn(wire.source));
             const length = pathLength(wire.points);
-            const spacing = SPACING_AT_1A / Math.max(current, 0.12);
-            const count = Math.max(2, Math.min(Math.floor(length / spacing), 26));
+            // Floored at length/26 so a wire never asks for more carriers than the
+            // budget allows. Saturating the density is the graceful way to hit that
+            // limit: the alternative, drawing 26 and stopping, empties the far end
+            // of the wire and starves whatever comes after it.
+            const spacing = Math.max(SPACING_AT_1A / Math.max(current, 0.12), length / 26);
 
-            for (let i = 0; i < count && index < MAX_CARRIERS; i++) {
-                // Every wire shares one phase, scaled by its own length, so
-                // carriers stay evenly spread as the current changes.
-                const t = i / count + this._phase / Math.max(length, 0.001);
-                const at = pointAlong(wire.points, t);
+            // Carriers sit a whole number of `spacing` apart, measured from where
+            // the phase has carried them along the path. Two things follow, and
+            // both were wrong before, when the count was a whole number and the
+            // gap came out as length/count:
+            //
+            //  - wires carrying the same current space their carriers the same,
+            //    whatever their length. A 200-unit gap on one wire and 239 on the
+            //    next, in a series circuit, said the current differed when it
+            //    cannot;
+            //  - a drifting current slides the carriers instead of re-spacing
+            //    every one of them at the instant the count ticks over.
+            //
+            // Subtracting `travelled` continues the pattern across the junction,
+            // so a carrier leaves one wire as another enters the next, rather than
+            // each wire recirculating its own carriers from nowhere.
+            const offset = (((this._phase - travelled) % spacing) + spacing) % spacing;
+
+            // `d < length`, not `<=`: pointAlong wraps its parameter, so t = 1
+            // lands back at the wire's start instead of its end.
+            for (let d = offset; d < length && index < MAX_CARRIERS; d += spacing) {
+                const at = pointAlong(wire.points, d / Math.max(length, 1e-6));
                 this._scratch.set(at[0], at[1], 0.25);
                 this._carriers.setInstanceTransform(index, this._scratch, Quaternion.identity, this._scale);
                 index++;
             }
+
+            travelled += length;
         }
 
         this._park(index);
