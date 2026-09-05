@@ -33,9 +33,17 @@ export interface Bench {
     downhillAt(distance: number): Vector3;
 }
 
+/**
+ * Everything here is parented with worldPositionStays = false. The bench is
+ * shifted off the origin before the blocks and the force arrows are made, and the
+ * default -- Unity's, which keeps a child's world pose -- hands each new child the
+ * inverse of that shift. The blocks survived it because `place` overwrites their
+ * local position every frame; the arrows and the trail never set one, so they were
+ * drawn a metre and a half to the side of the block whose forces they describe.
+ */
 function box(name: string, parent: GameObject, mesh: Mesh, material: StandardMaterial): GameObject {
     const go = new GameObject(name);
-    go.transform.parent = parent.transform;
+    go.transform.setParent(parent.transform, false);
     go.addComponent(MeshFilter).sharedMesh = mesh;
     go.addComponent(MeshRenderer).sharedMaterial = material;
     return go;
@@ -125,14 +133,14 @@ const TRAIL_CAPACITY = 240;
 
 export function createBlock(parent: GameObject, color: Color): Block {
     const root = new GameObject("Block");
-    root.transform.parent = parent.transform;
+    root.transform.setParent(parent.transform, false);
 
     const body = box("Body", root, Mesh.createCube(1), material(color, 0.4));
     let size = 0.8;
     let centre = new Vector3(0, 0, 0);
 
     const trailGo = new GameObject("Trail");
-    trailGo.transform.parent = parent.transform;
+    trailGo.transform.setParent(parent.transform, false);
     const trailLine = trailGo.addComponent(LineRenderer);
     // Bench-local, like everything else here: the whole bench is shifted to
     // centre it on the camera's orbit point, and world-space lines would stay
@@ -209,7 +217,7 @@ export class VectorArrow {
     constructor(parent: GameObject, name: string, public readonly color: Color) {
         const make = (suffix: string): LineRenderer => {
             const go = new GameObject(`${name} ${suffix}`);
-            go.transform.parent = parent.transform;
+            go.transform.setParent(parent.transform, false);
             const line = go.addComponent(LineRenderer);
             line.useWorldSpace = false;
             line.startWidth = 0.05;
