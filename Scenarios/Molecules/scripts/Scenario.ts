@@ -54,6 +54,7 @@ export default class MoleculeViewer extends ScenarioBehaviour {
     private _infoText!: UIText;
     private _factText!: UIText;
     private _atomText!: UIText;
+    private _atomPanel!: GameObject;
     private _hintText!: UIText;
     private _tabs: Button[] = [];
     private _rows: Button[] = [];
@@ -143,19 +144,19 @@ export default class MoleculeViewer extends ScenarioBehaviour {
 
         const ray = this._camera.camera.screenPointToRay(Input.mousePosition);
         if (!Physics.raycast(ray, this._hit)) {
-            this._atomText.text = "";
+            this._setAtomText("");
             return;
         }
 
         const go = this._hit.gameObject;
         const element = go ? this._elementOf.get(go) : undefined;
         if (!element) {
-            this._atomText.text = "";
+            this._setAtomText("");
             return;
         }
 
         const info = ELEMENT[element];
-        this._atomText.text = `Обраний атом:  ${element} — ${info.name}`;
+        this._setAtomText(`Обраний атом:  ${element} — ${info.name}`);
     }
 
     // ── UI ──────────────────────────────────────────────────────────
@@ -220,11 +221,12 @@ export default class MoleculeViewer extends ScenarioBehaviour {
         }
 
         // Clicked-atom readout.
-        makePanel(canvas, { anchor: "bottom-left", x: 16, y: 52, width: 320, height: 30 });
+        this._atomPanel = makePanel(canvas, { anchor: "bottom-left", x: 16, y: 52, width: 320, height: 30 });
         this._atomText = makeLabel(canvas, {
             anchor: "bottom-left", x: 28, y: 58, width: 300, height: 22,
             text: "", fontSize: 14, color: UI.accent,
         });
+        this._setAtomText("");
 
         this._hintText = makeLabel(canvas, {
             anchor: "bottom-center", y: 18, width: 900, height: 20,
@@ -287,6 +289,15 @@ export default class MoleculeViewer extends ScenarioBehaviour {
             + `Тип зв'язку: ${def.bondType}\n`
             + `Атомів: ${def.frag.atoms.length}`;
         this._factText.text = def.fact;
-        this._atomText.text = "";
+        this._setAtomText("");
+    }
+
+    /**
+     * Writes the clicked-atom readout, hiding its panel when there is nothing to
+     * report -- an empty label still leaves a painted background behind.
+     */
+    private _setAtomText(text: string): void {
+        this._atomText.text = text;
+        this._atomPanel.setActive(text.length > 0);
     }
 }

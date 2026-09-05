@@ -62,6 +62,7 @@ export default class AtomStructure extends ScenarioBehaviour {
     private _configText!: UIText;
     private _factText!: UIText;
     private _particleText!: UIText;
+    private _particlePanel!: GameObject;
     private _hintText!: UIText;
     private _setRow!: (row: number, text: string) => void;
     private _neutronRow!: SliderRow;
@@ -132,24 +133,24 @@ export default class AtomStructure extends ScenarioBehaviour {
 
         const ray = this._camera.camera.screenPointToRay(Input.mousePosition);
         if (!Physics.raycast(ray, this._hit)) {
-            this._particleText.text = "";
+            this._setParticleText("");
             return;
         }
 
         const go = this._hit.gameObject;
         const ref = go && this._atom ? this._atom.particleOf.get(go) : undefined;
         if (!ref) {
-            this._particleText.text = "";
+            this._setParticleText("");
             return;
         }
 
         if (ref.kind === "proton") {
-            this._particleText.text = "Протон — заряд +1, у ядрі. Їх кількість і є номером елемента.";
+            this._setParticleText("Протон — заряд +1, у ядрі. Їх кількість і є номером елемента.");
         } else if (ref.kind === "neutron") {
-            this._particleText.text = "Нейтрон — без заряду. Змінює масу, але не хімію.";
+            this._setParticleText("Нейтрон — без заряду. Змінює масу, але не хімію.");
         } else {
             const shell = "KLMN"[ref.shell ?? 0] ?? "?";
-            this._particleText.text = `Електрон — заряд −1, оболонка ${shell} (${(ref.shell ?? 0) + 1}-ша).`;
+            this._setParticleText(`Електрон — заряд −1, оболонка ${shell} (${(ref.shell ?? 0) + 1}-ша).`);
         }
     }
 
@@ -245,11 +246,12 @@ export default class AtomStructure extends ScenarioBehaviour {
         });
 
         // ── clicked particle ──
-        makePanel(canvas, { anchor: "bottom-left", x: 16, y: 52, width: 420, height: 30 });
+        this._particlePanel = makePanel(canvas, { anchor: "bottom-left", x: 16, y: 52, width: 420, height: 30 });
         this._particleText = makeLabel(canvas, {
             anchor: "bottom-left", x: 28, y: 58, width: 400, height: 22,
             text: "", fontSize: 13, color: UI.accent, wordWrap: false,
         });
+        this._setParticleText("");
 
         this._hintText = makeLabel(canvas, {
             anchor: "bottom-center", y: 18, width: 1000, height: 20,
@@ -313,7 +315,7 @@ export default class AtomStructure extends ScenarioBehaviour {
 
         this._camera.setOrbitDistance(this._atom.extent * 2.4 + 3);
         this._refreshPanel(info);
-        this._particleText.text = "";
+        this._setParticleText("");
     }
 
     private _refreshPanel(info: ElementInfo): void {
@@ -353,5 +355,14 @@ export default class AtomStructure extends ScenarioBehaviour {
             noble.shells.length === occupancy.length
             && noble.shells.every((count, i) => count === occupancy[i]));
         return match ? `конфігурація ${match.name}` : `${occupancy.join(", ")} електронів`;
+    }
+
+    /**
+     * Writes the clicked-particle readout, hiding its panel when there is nothing
+     * to report -- an empty label still leaves a painted background behind.
+     */
+    private _setParticleText(text: string): void {
+        this._particleText.text = text;
+        this._particlePanel.setActive(text.length > 0);
     }
 }
