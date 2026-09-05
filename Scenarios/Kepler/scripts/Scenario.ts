@@ -345,13 +345,15 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
             label: "Прогноз орбіти", value: true,
             onChange: (on) => { this._showPrediction = on; },
         });
+        // The row's two labels are the shortest and the longest of the four, so
+        // they do not split their 264 evenly: an even split clips "швидкості".
         makeToggle(canvas, {
-            anchor: "top-right", x: 30, y: 290, width: 130, height: 20,
+            anchor: "top-right", x: 30, y: 290, width: 112, height: 20,
             label: "Сектори", value: true,
             onChange: (on) => { this._showSectors = on; if (!on) this._sectors.clear(); },
         });
         makeToggle(canvas, {
-            anchor: "top-right", x: 168, y: 290, width: 130, height: 20,
+            anchor: "top-right", x: 150, y: 290, width: 148, height: 20,
             label: "Вектор швидкості", value: true,
             onChange: (on) => { this._showVelocity = on; },
         });
