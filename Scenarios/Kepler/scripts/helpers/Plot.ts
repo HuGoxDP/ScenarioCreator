@@ -29,7 +29,10 @@ const MIN_LOG = -2;
 const MAX_LOG = 5;
 
 export interface PlotOptions {
-    /** Inset from the left and the top of the screen, canvas units. */
+    /**
+     * Inset from the left of the screen and up from its bottom, canvas units —
+     * the same bottom-left convention as the panel and captions around it.
+     */
     x: number;
     y: number;
     size: number;
@@ -37,27 +40,41 @@ export interface PlotOptions {
 
 export class Plot {
     private readonly _body: RectTransform;
+    private readonly _size: number;
 
-    constructor(canvas: GameObject, private readonly _options: PlotOptions, planets: { a: number; period: number }[]) {
-        const { x, y, size } = _options;
+    constructor(canvas: GameObject, options: PlotOptions, planets: { a: number; period: number }[]) {
+        const size = this._size = options.size;
+
+        // Everything hangs off one bottom-left-anchored container, so the plot
+        // stays inside its panel at any window size. Within it the parts use the
+        // plot's own frame: origin top-left, Y down, 0…size on both axes.
+        const root = new GameObject("Plot");
+        root.transform.parent = canvas.transform;
+
+        const rootRect = root.addComponent(RectTransform);
+        rootRect.anchorMin = new Vector2(0, 1);
+        rootRect.anchorMax = new Vector2(0, 1);
+        rootRect.pivot = new Vector2(0, 1);
+        rootRect.anchoredPosition = new Vector2(options.x, -options.y);
+        rootRect.sizeDelta = new Vector2(size, size);
 
         // Axes.
-        this._rect(canvas, x, y + size, size, 2, AXIS_COLOR);
-        this._rect(canvas, x, y, 2, size, AXIS_COLOR);
+        this._rect(root, 0, size, size, 2, AXIS_COLOR);
+        this._rect(root, 0, 0, 2, size, AXIS_COLOR);
 
         // The T² = a³ diagonal, as a dotted trail of small squares.
         for (let i = 0; i <= 40; i++) {
             const t = i / 40;
-            this._rect(canvas, x + t * size - 1, y + size - t * size - 1, 3, 3, DIAGONAL_COLOR);
+            this._rect(root, t * size - 1, size - t * size - 1, 3, 3, DIAGONAL_COLOR);
         }
 
         for (const planet of planets) {
             const px = this._map(Math.log10(planet.a ** 3));
             const py = this._map(Math.log10(planet.period ** 2));
-            this._rect(canvas, x + px * size - 3, y + size - py * size - 3, 6, 6, PLANET_COLOR);
+            this._rect(root, px * size - 3, size - py * size - 3, 6, 6, PLANET_COLOR);
         }
 
-        this._body = this._rect(canvas, x, y, 9, 9, BODY_COLOR);
+        this._body = this._rect(root, 0, 0, 9, 9, BODY_COLOR);
     }
 
     /** Moves the simulated body's marker; a non-elliptical orbit hides it. */
@@ -66,12 +83,12 @@ export class Plot {
         this._body.gameObject.setActive(visible);
         if (!visible) return;
 
-        const { x, y, size } = this._options;
+        const size = this._size;
         const px = this._map(Math.log10(semiMajor ** 3));
         const py = this._map(Math.log10(period ** 2));
         this._body.anchoredPosition = new Vector2(
-            x + px * size - 4.5,
-            -(y + size - py * size - 4.5),
+            px * size - 4.5,
+            size - py * size - 4.5,
         );
     }
 
@@ -80,9 +97,9 @@ export class Plot {
         return Math.min(1, Math.max(0, (value - MIN_LOG) / (MAX_LOG - MIN_LOG)));
     }
 
-    private _rect(canvas: GameObject, x: number, y: number, width: number, height: number, color: Color): RectTransform {
+    private _rect(root: GameObject, x: number, y: number, width: number, height: number, color: Color): RectTransform {
         const go = new GameObject("Plot part");
-        go.transform.parent = canvas.transform;
+        go.transform.parent = root.transform;
 
         const rt = go.addComponent(RectTransform);
         rt.anchorMin = new Vector2(0, 0);

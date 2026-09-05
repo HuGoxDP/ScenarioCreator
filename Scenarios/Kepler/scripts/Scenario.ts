@@ -368,7 +368,9 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
             anchor: "bottom-left", x: 28, y: 244, width: 210, height: 18,
             text: "Третій закон: T² проти a³", fontSize: 12, color: UI.textDim, wordWrap: false,
         });
-        this._plot = new Plot(canvas, { x: 40, y: 72, size: 170 }, PLANETS);
+        // Between the caption's top edge (82) and the title's bottom (244), centred
+        // in the 230-wide panel that starts 16 from the left.
+        this._plot = new Plot(canvas, { x: 56, y: 90, size: 148 }, PLANETS);
         makeLabel(canvas, {
             anchor: "bottom-left", x: 28, y: 52, width: 216, height: 30,
             text: "Вісім планет — сірі. Ваше тіло — помаранчеве. Усі на одній прямій.",
