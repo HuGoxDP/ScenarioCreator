@@ -175,6 +175,12 @@ export function makeButton(parent: GameObject, opts: ButtonOptions): Button {
 
 /** A slider is a row: name on the left, live value on the right, track below. */
 export interface SliderOptions extends Placement {
+    /**
+     * Width reserved for the value column. Raise it when the formatter can emit
+     * something longer than a number — Kepler annotates the circular and escape
+     * thresholds, for instance.
+     */
+    valueWidth?: number;
     label: string;
     min: number;
     max: number;
@@ -195,17 +201,39 @@ export function makeSlider(parent: GameObject, opts: SliderOptions): SliderRow {
     const format = opts.format ?? ((v: number) => (opts.wholeNumbers ? String(Math.round(v)) : v.toFixed(2)));
     const y = opts.y ?? 0;
 
+    // Two columns that do not overlap: label on the left, value on the right.
+    // They used to share an origin — the label spanning 70% and the value the
+    // full width, right-aligned — so a label long enough to reach the value was
+    // drawn straight through it.
+    //
+    // `x` is an inward offset from the anchor corner, so which way a column has
+    // to move depends on the corner: against a right-hand anchor the box grows
+    // leftward and a larger `x` moves it further left.
+    const valueColumn = opts.valueWidth ?? 64;
+    const gap = 6;
+    const labelWidth = Math.max(24, opts.width - valueColumn - gap);
+    const baseX = opts.x ?? 0;
+    const fromRight = opts.anchor.endsWith("right");
+
     makeLabel(parent, {
-        anchor: opts.anchor, x: opts.x, y,
-        width: opts.width * 0.7, height: 18,
+        anchor: opts.anchor,
+        x: fromRight ? baseX + valueColumn + gap : baseX,
+        y,
+        width: labelWidth, height: 18,
         text: opts.label, fontSize: 13, color: UI.textDim,
+        // One line tall: wrapping would push the rest out of the row's height
+        // rather than clipping it where the column runs out.
+        wordWrap: false,
     });
 
     const valueText = makeLabel(parent, {
-        anchor: opts.anchor, x: opts.x, y,
-        width: opts.width, height: 18,
+        anchor: opts.anchor,
+        x: fromRight ? baseX : baseX + labelWidth + gap,
+        y,
+        width: valueColumn, height: 18,
         text: format(opts.value), fontSize: 13, color: UI.accent,
         align: TextAlignment.Right,
+        wordWrap: false,
     });
 
     const go = new GameObject(`Slider ${opts.label}`);

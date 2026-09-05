@@ -301,7 +301,10 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
 
         this._speedRow = makeSlider(canvas, {
             anchor: "top-right", x: 30, y: 106, width: 264, height: 14,
-            label: "Швидкість, часток кругової", min: 0.2, max: 1.6, value: 1,
+            // The formatter appends "кругова"/"втечі" at the two thresholds, so
+            // this row needs more room for its value than a bare number takes.
+            valueWidth: 116,
+            label: "Швидкість, × кругової", min: 0.2, max: 1.6, value: 1,
             // 1.000 is circular and √2 ≈ 1.414 is escape — the two thresholds
             // are places on the control the student is already holding.
             format: (v) => `${v.toFixed(3)}×` + (Math.abs(v - 1) < 0.004 ? "  кругова" : Math.abs(v - Math.SQRT2) < 0.004 ? "  втечі" : ""),
