@@ -251,7 +251,10 @@ export class AtomBuilder {
     private _ring(radius: number): Mesh {
         let mesh = this._ringMeshes.get(radius);
         if (!mesh) {
-            mesh = Mesh.createTorus(radius, RING_TUBE, 6, 96);
+            // radialSegments divides the ring, tubularSegments the tube — the
+            // opposite of THREE.TorusGeometry. Passed Three's way, this drew a
+            // hexagon instead of a shell.
+            mesh = Mesh.createTorus(radius, RING_TUBE, 96, 6);
             this._ringMeshes.set(radius, mesh);
         }
         return mesh;
