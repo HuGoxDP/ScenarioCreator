@@ -16,7 +16,7 @@
 import {
     ScenarioBehaviour, GameObject, Color, Vector3, Quaternion, Mesh,
     AmbientLight, PointLight, MeshFilter, MeshRenderer, StandardMaterial, LineRenderer,
-    Time, Input, KeyCode,
+    Time, Input, KeyCode, Vector2, RectTransform, UIText,
     TextAlignment, VerticalAlignment,
 } from "WebEngineTS";
 
@@ -42,21 +42,30 @@ const TRAIL_CAPACITY = 2200;
 const STAR = new Color(1.0, 0.85, 0.35, 1);
 const SATELLITE = new Color(0.65, 0.85, 1.0, 1);
 const TRAIL = new Color(0.45, 0.70, 1.0, 1);
-/** Amber, not green: the orbit itself is green now and the two would read as one. */
-const VELOCITY = new Color(1.00, 0.78, 0.30, 1);
+/** Green, so it is not mistaken for `r1`, which is the yellow line to the star. */
+const VELOCITY = new Color(0.20, 0.72, 0.35, 1);
 
-// The ellipse and its construction. Colours follow the diagram this was asked to
-// look like: the path green, the axes blue, the empty focus a white cross, and
-// both strings — star to body, body to empty focus — red.
+// The ellipse and its construction, following the reference diagram: a pale
+// outline, `r1` from the star to the body in yellow, `r2` on to the empty focus
+// in violet, and one semi-major axis in red — the length the legend calls `a`.
+// The centre and the empty focus are dots, not crosses.
 //
 // Written darker than they look. A line's colour reaches the GPU as a vertex
 // attribute, which is linear, and is brightened again on the way to an sRGB
 // framebuffer; the values that read as vivid on screen are the ones that look
-// nearly black here. `#22dd33`, `#3355ee` and `#ee3333` converted.
-const ORBIT = new Color(0.016, 0.727, 0.033, 1);
-const AXIS = new Color(0.033, 0.093, 0.854, 1);
-const RADIUS = new Color(0.854, 0.033, 0.033, 1);
-const EMPTY_FOCUS = new Color(1, 1, 1, 1);
+// nearly black here. These are `#7ec8de`, `#f0d878`, `#6a6ad0`, `#ee3333`,
+// `#ff8c42` and `#ff7fbf` converted.
+const ORBIT = new Color(0.207, 0.577, 0.732, 1);
+const R1 = new Color(0.870, 0.691, 0.185, 1);
+const R2 = new Color(0.145, 0.145, 0.630, 1);
+const SEMI_MAJOR = new Color(0.854, 0.033, 0.033, 1);
+const CENTRE_DOT = new Color(1.000, 0.263, 0.053, 1);
+const FOCUS_DOT = new Color(1.000, 0.213, 0.523, 1);
+
+/** The same hues as the UI draws them: 2D text needs no linear conversion. */
+const UI_R1 = new Color(0.941, 0.847, 0.471, 1);
+const UI_R2 = new Color(0.561, 0.561, 0.910, 1);
+const UI_SUM = new Color(0.933, 0.200, 0.200, 1);
 
 /**
  * Below this eccentricity the orbit is a circle for drawing purposes: its foci,
@@ -93,6 +102,10 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
     private _showPrediction = true;
     private _showSectors = true;
     private _showVelocity = true;
+
+    /** The `a` beside the semi-major segment; followed to it every frame. */
+    private _aLabel!: UIText;
+    private _aRect!: RectTransform;
 
     private _sectorClock = 0;
     private _setRow!: (row: number, text: string) => void;
@@ -217,9 +230,11 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
 
         this._painter.begin();
 
+        this._aLabel.gameObject.setActive(false);
+
         if (this._showPrediction && elements.conic === "ellipse") {
-            const points = conicPoints(elements, 140).map((p) => [p[0], p[1]]);
-            this._painter.polyline(points, ORBIT, 0.015);
+            const points = conicPoints(elements, 160).map((p) => [p[0], p[1]]);
+            this._painter.polyline(points, ORBIT, 0.007);
 
             const [ux, uy] = elements.periapsisDirection;
             const a = elements.semiMajor;
@@ -227,31 +242,30 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
 
             if (elements.eccentricity > CIRCULAR_EPS) {
                 const cx = -c * ux, cy = -c * uy;
-                const b = a * Math.sqrt(Math.max(0, 1 - elements.eccentricity ** 2));
-                // Perpendicular to the major axis, so the minor axis runs from the
-                // centre outwards rather than from the focus.
-                const px = -uy, py = ux;
-
-                // The two axes, crossing at the centre — which is visibly not
-                // where the star is. That gap is Kepler's first law.
-                this._painter.line(cx + a * ux, cy + a * uy, cx - a * ux, cy - a * uy, AXIS, 0.011);
-                this._painter.line(cx - b * px, cy - b * py, cx + b * px, cy + b * py, AXIS, 0.011);
-
-                // The empty focus, and the body's distance to it. Together with
-                // the radius vector below this is the string construction: the two
-                // lengths always sum to 2a, which is what makes the curve an
-                // ellipse rather than merely an oval.
                 const fx = -2 * c * ux, fy = -2 * c * uy;
-                this._painter.line(this._orbit.x, this._orbit.y, fx, fy, RADIUS, 0.016);
-                this._cross(fx, fy, 0.040, EMPTY_FOCUS);
+
+                // r2: on from the body to the empty focus. With r1 below it this
+                // is the string construction — the two lengths always sum to 2a,
+                // which is what makes the curve an ellipse and not merely an oval.
+                this._painter.line(this._orbit.x, this._orbit.y, fx, fy, R2, 0.013);
+
+                // One semi-major axis, centre to the far vertex: the length the
+                // legend calls `a`. Away from the star, as the reference draws it.
+                const ax = cx - a * ux, ay = cy - a * uy;
+                this._painter.line(cx, cy, ax, ay, SEMI_MAJOR, 0.013);
+                this._placeALabel((cx + ax) / 2, (cy + ay) / 2);
+
+                // Last, so they sit on top of the lines that meet at them.
+                this._painter.dot(cx, cy, 0.036, CENTRE_DOT);
+                this._painter.dot(fx, fy, 0.036, FOCUS_DOT);
             }
         }
 
-        // Star → body, drawn whatever else is switched on: it is a property of
-        // where the body is now, not of the predicted path, and it is the line
-        // that carries the second law — this length, times the speed, is what
-        // sweeps equal areas in equal times.
-        this._painter.line(0, 0, this._orbit.x, this._orbit.y, RADIUS, 0.009);
+        // r1: star → body, drawn whatever else is switched on. It is a property
+        // of where the body is now rather than of the predicted path, and it is
+        // the line the second law is about — this length, times the speed, is
+        // what sweeps equal areas in equal times.
+        this._painter.line(0, 0, this._orbit.x, this._orbit.y, R1, 0.010);
 
         if (this._showVelocity && this._orbit.stopped === "none") {
             // Length in the same scale as the orbit, so the speed change
@@ -268,9 +282,24 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
         this._plot.update(elements.semiMajor, elements.period);
     }
 
-    private _cross(x: number, y: number, size: number, color: Color): void {
-        this._painter.line(x - size, y, x + size, y, color, 0.01);
-        this._painter.line(x, y - size, x, y + size, color, 0.01);
+    /**
+     * Puts the `a` label beside the midpoint of the semi-major segment, in
+     * screen space.
+     *
+     * The diagram's other text lives in the UI layer, which is 2D and has no way
+     * to follow a point in the scene; projecting through the camera each frame is
+     * what keeps the label on its line while the view is panned and zoomed.
+     */
+    private _placeALabel(x: number, y: number): void {
+        const at = this._camera.camera.worldToScreenPoint(new Vector3(x, y, 0));
+        if (at.z <= 0) return;
+
+        this._aLabel.gameObject.setActive(true);
+        // Y is down in both the screen conversion and the canvas, so lifting the
+        // label clear of the line means subtracting. It has to clear the empty
+        // focus as well: near e = 0.5 that focus sits almost exactly on this
+        // midpoint, since c = a·e is then about a/2.
+        this._aRect.anchoredPosition = new Vector2(at.x, at.y - 26);
     }
 
     // ── readout ─────────────────────────────────────────────────────
@@ -430,5 +459,34 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
             fontSize: 12, color: UI.textDim,
             align: TextAlignment.Center, valign: VerticalAlignment.Middle,
         });
+
+        // The legend, in the colours the three lines are drawn in, so no key is
+        // needed to tell which is which.
+        makeLabel(canvas, {
+            anchor: "bottom-right", x: 28, y: 118, width: 300, height: 22,
+            text: "r₁ — від зорі до тіла", fontSize: 15, color: UI_R1,
+            align: TextAlignment.Right, wordWrap: false,
+        });
+        makeLabel(canvas, {
+            anchor: "bottom-right", x: 28, y: 94, width: 300, height: 22,
+            text: "r₂ — від тіла до порожнього фокуса", fontSize: 15, color: UI_R2,
+            align: TextAlignment.Right, wordWrap: false,
+        });
+        makeLabel(canvas, {
+            anchor: "bottom-right", x: 28, y: 66, width: 300, height: 24,
+            text: "r₁ + r₂ = 2a", fontSize: 18, color: UI_SUM,
+            align: TextAlignment.Right, wordWrap: false,
+        });
+
+        // Follows the semi-major segment through the camera every frame; pivoted
+        // at its centre so the projected point lands in the middle of the glyph.
+        this._aLabel = makeLabel(canvas, {
+            anchor: "top-left", x: 0, y: 0, width: 40, height: 22,
+            text: "a", fontSize: 18, color: UI_SUM, wordWrap: false,
+            align: TextAlignment.Center, valign: VerticalAlignment.Middle,
+        });
+        this._aRect = this._aLabel.gameObject.getComponent(RectTransform)!;
+        this._aRect.pivot = new Vector2(0.5, 0.5);
+        this._aLabel.gameObject.setActive(false);
     }
 }

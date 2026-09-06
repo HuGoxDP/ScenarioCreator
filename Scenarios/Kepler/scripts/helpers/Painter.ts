@@ -59,6 +59,27 @@ export class Painter {
         renderer.setPositions(points.map((p) => new Vector3(p[0], p[1], 0)));
     }
 
+    /**
+     * A filled dot of the given radius, for marking a point rather than a path.
+     *
+     * Drawn as a small closed ring struck with a pen wider than the ring itself,
+     * which fills the disc: the pool holds lines, and a line with width is the
+     * only fill this has. The pen has to overshoot the centre — sized to meet it
+     * exactly, anti-aliasing leaves a speck of background in the middle.
+     */
+    dot(x: number, y: number, radius: number, color: Color): void {
+        // 13 steps around a circle of 12: the last retraces the first, so the
+        // ribbon overlaps where it closes. Stopping exactly on the start leaves a
+        // wedge there — the two ends are ribs facing different ways, and whatever
+        // the dot was meant to cover shows through the gap.
+        const points: number[][] = [];
+        for (let i = 0; i <= 13; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            points.push([x + Math.cos(angle) * radius * 0.35, y + Math.sin(angle) * radius * 0.35]);
+        }
+        this.polyline(points, color, radius * 1.3);
+    }
+
     /** A construction line: it carries no light, so it is never solid. */
     dashed(x0: number, y0: number, x1: number, y1: number, color: Color, width = 0.045): void {
         const dx = x1 - x0;
