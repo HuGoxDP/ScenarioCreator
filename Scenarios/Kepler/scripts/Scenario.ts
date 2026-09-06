@@ -45,6 +45,16 @@ const TRAIL = new Color(0.45, 0.70, 1.0, 1);
 const PREDICTION = new Color(0.55, 0.60, 0.72, 1);
 const MARKER = new Color(1.0, 0.62, 0.35, 1);
 const VELOCITY = new Color(0.50, 0.95, 0.60, 1);
+/** The ellipse's own construction lines: axes, centre, and the radius vector. */
+const AXIS = new Color(0.30, 0.45, 1.00, 1);
+const RADIUS = new Color(1.00, 0.30, 0.30, 1);
+
+/**
+ * Below this eccentricity the orbit is a circle for drawing purposes: its foci,
+ * periapsis and apoapsis all collapse onto the centre, so marking them puts
+ * crosses at arbitrary points and says the opposite of what they mean.
+ */
+const CIRCULAR_EPS = 0.01;
 
 export default class OrbitalMechanics extends ScenarioBehaviour {
     private _camera!: IFlatCamera;
@@ -58,7 +68,10 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
     private readonly _trailPoints: Vector3[] = [];
 
     private _height = 1;
-    private _speedFactor = 1;
+    // 0.8 of the circular speed, so the orbit is an ellipse of e = 1 - 0.8^2 =
+    // 0.36 on load. Starting circular hid the first law behind the one shape
+    // that has nothing to say about it; "Кругова швидкість" is still one button.
+    private _speedFactor = 0.8;
     private _angle = 0;
     private _timeScale = 1;
     private _running = false;
@@ -196,17 +209,40 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
             this._painter.polyline(points, PREDICTION, 0.008);
 
             const [ux, uy] = elements.periapsisDirection;
-            const c = elements.semiMajor * elements.eccentricity;
-            // Both foci: the star sits on one of them and NOT at the centre,
-            // which is the whole of Kepler's first law.
-            this._cross(0, 0, 0.035, MARKER);
-            this._cross(-2 * c * ux, -2 * c * uy, 0.035, PREDICTION);
-
+            const a = elements.semiMajor;
+            const c = a * elements.eccentricity;
             const peri = elements.periapsis;
             const apo = elements.apoapsis;
-            this._cross(peri * ux, peri * uy, 0.028, MARKER);
-            this._cross(-apo * ux, -apo * uy, 0.028, MARKER);
+
+            // The star's focus is marked whatever the shape; it is where the body
+            // is actually attracted from.
+            this._cross(0, 0, 0.035, MARKER);
+
+            if (elements.eccentricity > CIRCULAR_EPS) {
+                // The construction that makes the first law readable: the two
+                // axes, the centre they cross at, and the star sitting on a focus
+                // *beside* that centre rather than on it.
+                const cx = -c * ux, cy = -c * uy;
+                const b = a * Math.sqrt(Math.max(0, 1 - elements.eccentricity ** 2));
+                // Perpendicular to the major axis, so the minor axis is drawn from
+                // the centre outwards rather than from the focus.
+                const px = -uy, py = ux;
+
+                this._painter.line(peri * ux, peri * uy, -apo * ux, -apo * uy, AXIS, 0.011);
+                this._painter.line(cx - b * px, cy - b * py, cx + b * px, cy + b * py, AXIS, 0.011);
+
+                this._cross(cx, cy, 0.030, AXIS);
+                this._cross(-2 * c * ux, -2 * c * uy, 0.035, PREDICTION);
+                this._cross(peri * ux, peri * uy, 0.028, MARKER);
+                this._cross(-apo * ux, -apo * uy, 0.028, MARKER);
+            }
         }
+
+        // Star → body, drawn whatever else is switched on: it is a property of
+        // where the body is now, not of the predicted path, and it is the line
+        // that carries the second law — this length, times the speed, is what
+        // sweeps equal areas in equal times.
+        this._painter.line(0, 0, this._orbit.x, this._orbit.y, RADIUS, 0.010);
 
         if (this._showVelocity && this._orbit.stopped === "none") {
             // Length in the same scale as the orbit, so the speed change
@@ -304,7 +340,7 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
             // The formatter appends "кругова"/"втечі" at the two thresholds, so
             // this row needs more room for its value than a bare number takes.
             valueWidth: 116,
-            label: "Швидкість, × кругової", min: 0.2, max: 1.6, value: 1,
+            label: "Швидкість, × кругової", min: 0.2, max: 1.6, value: 0.8,
             // 1.000 is circular and √2 ≈ 1.414 is escape — the two thresholds
             // are places on the control the student is already holding.
             format: (v) => `${v.toFixed(3)}×` + (Math.abs(v - 1) < 0.004 ? "  кругова" : Math.abs(v - Math.SQRT2) < 0.004 ? "  втечі" : ""),
