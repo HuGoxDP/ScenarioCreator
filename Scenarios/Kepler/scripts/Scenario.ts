@@ -42,12 +42,21 @@ const TRAIL_CAPACITY = 2200;
 const STAR = new Color(1.0, 0.85, 0.35, 1);
 const SATELLITE = new Color(0.65, 0.85, 1.0, 1);
 const TRAIL = new Color(0.45, 0.70, 1.0, 1);
-const PREDICTION = new Color(0.55, 0.60, 0.72, 1);
-const MARKER = new Color(1.0, 0.62, 0.35, 1);
-const VELOCITY = new Color(0.50, 0.95, 0.60, 1);
-/** The ellipse's own construction lines: axes, centre, and the radius vector. */
-const AXIS = new Color(0.30, 0.45, 1.00, 1);
-const RADIUS = new Color(1.00, 0.30, 0.30, 1);
+/** Amber, not green: the orbit itself is green now and the two would read as one. */
+const VELOCITY = new Color(1.00, 0.78, 0.30, 1);
+
+// The ellipse and its construction. Colours follow the diagram this was asked to
+// look like: the path green, the axes blue, the empty focus a white cross, and
+// both strings — star to body, body to empty focus — red.
+//
+// Written darker than they look. A line's colour reaches the GPU as a vertex
+// attribute, which is linear, and is brightened again on the way to an sRGB
+// framebuffer; the values that read as vivid on screen are the ones that look
+// nearly black here. `#22dd33`, `#3355ee` and `#ee3333` converted.
+const ORBIT = new Color(0.016, 0.727, 0.033, 1);
+const AXIS = new Color(0.033, 0.093, 0.854, 1);
+const RADIUS = new Color(0.854, 0.033, 0.033, 1);
+const EMPTY_FOCUS = new Color(1, 1, 1, 1);
 
 /**
  * Below this eccentricity the orbit is a circle for drawing purposes: its foci,
@@ -68,15 +77,19 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
     private readonly _trailPoints: Vector3[] = [];
 
     private _height = 1;
-    // 0.8 of the circular speed, so the orbit is an ellipse of e = 1 - 0.8^2 =
-    // 0.36 on load. Starting circular hid the first law behind the one shape
-    // that has nothing to say about it; "Кругова швидкість" is still one button.
-    private _speedFactor = 0.8;
+    // 0.7 of the circular speed, so the orbit is an ellipse of e = 1 - 0.7^2 =
+    // 0.51 on load. Starting circular hid the first law behind the one shape
+    // that has nothing to say about it, and a nearly round ellipse puts the
+    // two foci almost on top of each other, which hides the construction.
+    // "Кругова швидкість" is still one button away.
+    private _speedFactor = 0.7;
     private _angle = 0;
     private _timeScale = 1;
     private _running = false;
 
-    private _showTrail = true;
+    // Off by default: on a closed orbit the trail retraces the predicted
+    // ellipse exactly and, being drawn after it, simply hides it.
+    private _showTrail = false;
     private _showPrediction = true;
     private _showSectors = true;
     private _showVelocity = true;
@@ -206,35 +219,31 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
 
         if (this._showPrediction && elements.conic === "ellipse") {
             const points = conicPoints(elements, 140).map((p) => [p[0], p[1]]);
-            this._painter.polyline(points, PREDICTION, 0.008);
+            this._painter.polyline(points, ORBIT, 0.015);
 
             const [ux, uy] = elements.periapsisDirection;
             const a = elements.semiMajor;
             const c = a * elements.eccentricity;
-            const peri = elements.periapsis;
-            const apo = elements.apoapsis;
-
-            // The star's focus is marked whatever the shape; it is where the body
-            // is actually attracted from.
-            this._cross(0, 0, 0.035, MARKER);
 
             if (elements.eccentricity > CIRCULAR_EPS) {
-                // The construction that makes the first law readable: the two
-                // axes, the centre they cross at, and the star sitting on a focus
-                // *beside* that centre rather than on it.
                 const cx = -c * ux, cy = -c * uy;
                 const b = a * Math.sqrt(Math.max(0, 1 - elements.eccentricity ** 2));
-                // Perpendicular to the major axis, so the minor axis is drawn from
-                // the centre outwards rather than from the focus.
+                // Perpendicular to the major axis, so the minor axis runs from the
+                // centre outwards rather than from the focus.
                 const px = -uy, py = ux;
 
-                this._painter.line(peri * ux, peri * uy, -apo * ux, -apo * uy, AXIS, 0.011);
+                // The two axes, crossing at the centre — which is visibly not
+                // where the star is. That gap is Kepler's first law.
+                this._painter.line(cx + a * ux, cy + a * uy, cx - a * ux, cy - a * uy, AXIS, 0.011);
                 this._painter.line(cx - b * px, cy - b * py, cx + b * px, cy + b * py, AXIS, 0.011);
 
-                this._cross(cx, cy, 0.030, AXIS);
-                this._cross(-2 * c * ux, -2 * c * uy, 0.035, PREDICTION);
-                this._cross(peri * ux, peri * uy, 0.028, MARKER);
-                this._cross(-apo * ux, -apo * uy, 0.028, MARKER);
+                // The empty focus, and the body's distance to it. Together with
+                // the radius vector below this is the string construction: the two
+                // lengths always sum to 2a, which is what makes the curve an
+                // ellipse rather than merely an oval.
+                const fx = -2 * c * ux, fy = -2 * c * uy;
+                this._painter.line(this._orbit.x, this._orbit.y, fx, fy, RADIUS, 0.016);
+                this._cross(fx, fy, 0.040, EMPTY_FOCUS);
             }
         }
 
@@ -242,7 +251,7 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
         // where the body is now, not of the predicted path, and it is the line
         // that carries the second law — this length, times the speed, is what
         // sweeps equal areas in equal times.
-        this._painter.line(0, 0, this._orbit.x, this._orbit.y, RADIUS, 0.010);
+        this._painter.line(0, 0, this._orbit.x, this._orbit.y, RADIUS, 0.009);
 
         if (this._showVelocity && this._orbit.stopped === "none") {
             // Length in the same scale as the orbit, so the speed change
@@ -340,7 +349,7 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
             // The formatter appends "кругова"/"втечі" at the two thresholds, so
             // this row needs more room for its value than a bare number takes.
             valueWidth: 116,
-            label: "Швидкість, × кругової", min: 0.2, max: 1.6, value: 0.8,
+            label: "Швидкість, × кругової", min: 0.2, max: 1.6, value: 0.7,
             // 1.000 is circular and √2 ≈ 1.414 is escape — the two thresholds
             // are places on the control the student is already holding.
             format: (v) => `${v.toFixed(3)}×` + (Math.abs(v - 1) < 0.004 ? "  кругова" : Math.abs(v - Math.SQRT2) < 0.004 ? "  втечі" : ""),
@@ -373,7 +382,7 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
 
         makeToggle(canvas, {
             anchor: "top-right", x: 30, y: 264, width: 130, height: 20,
-            label: "Слід", value: true,
+            label: "Слід", value: false,
             onChange: (on) => { this._showTrail = on; },
         });
         makeToggle(canvas, {
