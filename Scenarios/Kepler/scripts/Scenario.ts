@@ -4,8 +4,10 @@
 // gets. All three of Kepler's laws are demonstrated rather than asserted.
 //
 // This is the companion to `solar-system-scenario`, which shows the result;
-// this one shows why. It deliberately shares nothing with it: no planet
-// textures, no tour, no skybox.
+// this one shows why. It borrows that scenario's starfield and its Sun and
+// Earth maps, so the two read as the same sky; it does not borrow the tour,
+// the planet set or any of its behaviour. It used to share nothing at all,
+// which left a diagram of flat discs on flat blue.
 //
 // The mechanics is in `helpers/Orbit.ts`, which imports nothing from the
 // engine and was checked in Node first: a circular orbit closes with an energy
@@ -17,6 +19,7 @@ import {
     ScenarioBehaviour, GameObject, Color, Vector3, Quaternion, Mesh,
     AmbientLight, PointLight, MeshFilter, MeshRenderer, StandardMaterial, LineRenderer,
     Time, Input, KeyCode, Vector2, RectTransform, UIText,
+    Resources, Texture2D,
     TextAlignment, VerticalAlignment,
 } from "WebEngineTS";
 
@@ -34,6 +37,11 @@ import {
 
 /** Radius of the central body, AU — big enough to be a target, small enough to orbit. */
 const BODY_RADIUS = 0.09;
+/** Radius of the orbiting body. Small enough to read as a point on the diagram. */
+const SATELLITE_RADIUS = 0.028;
+/** How far behind the working plane the starfield sits. Orthographic, so
+    distance costs nothing in size — only in draw order. */
+const BACKDROP_DISTANCE = 40;
 /** Past this the body has plainly left; the run stops. */
 const FAR_LIMIT = 60;
 
@@ -82,6 +90,7 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
 
     private _orbit!: Orbit;
     private _satellite!: GameObject;
+    private _backdrop: GameObject | null = null;
     private _trail!: LineRenderer;
     private readonly _trailPoints: Vector3[] = [];
 
@@ -107,6 +116,15 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
     private _aLabel!: UIText;
     private _aRect!: RectTransform;
 
+    /**
+     * Set once `awake` has finished building the scene.
+     *
+     * `update` runs while an async `awake` is still awaiting, and loading the
+     * textures made that a real window: `_draw` reached `this._orbit.elements`
+     * on an orbit that did not exist yet, once a frame until the load returned.
+     */
+    private _ready = false;
+
     private _sectorClock = 0;
     private _setRow!: (row: number, text: string) => void;
     private _speedRow!: SliderRow;
@@ -123,17 +141,22 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
         ambient.intensity = 0.35;
         ambient.color = new Color(0.6, 0.65, 0.8, 1);
 
-        this._createBodies();
+        await this._createBackdrop();
+        await this._createBodies();
         this._painter = new Painter(new GameObject("Diagram"));
         this._sectors = new SweptArea(new GameObject("Swept sectors"));
         this._orbit = new Orbit(BODY_RADIUS, FAR_LIMIT);
 
         this._createUI();
         this._relaunch();
+        this._ready = true;
     }
 
     override update(): void {
+        if (!this._ready) return;
+
         this._camera.update();
+        this._fitBackdrop();
 
         if (Input.getKeyDown(KeyCode.Space)) this._running = !this._running;
         if (Input.getKeyDown(KeyCode.KeyR)) this._relaunch();
@@ -161,13 +184,28 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
 
     // ── scene ───────────────────────────────────────────────────────
 
-    private _createBodies(): void {
+    private async _createBodies(): Promise<void> {
+        const sunTexture = await Resources.tryLoad(Texture2D, "textures/sun");
+        const earthTexture = await Resources.tryLoad(Texture2D, "textures/earth");
+        // `tryLoad` answers null rather than throwing, so a missing map would
+        // otherwise show up only as a body that is quietly the wrong colour.
+        if (!sunTexture) console.warn("[Kepler] textures/sun missing — star drawn flat");
+        if (!earthTexture) console.warn("[Kepler] textures/earth missing — body drawn flat");
+
         const starGo = new GameObject("Star");
-        starGo.transform.localScale = new Vector3(BODY_RADIUS * 2, BODY_RADIUS * 2, BODY_RADIUS * 2);
-        starGo.addComponent(MeshFilter).sharedMesh = Mesh.createSphere(1, 20);
+        // `createSphere(1, …)` has radius 1, so the scale *is* the radius. It was
+        // set to twice BODY_RADIUS, which drew the star at twice the size the
+        // orbit integrator treats it as — the single biggest reason the diagram
+        // read as oversized.
+        starGo.transform.localScale = new Vector3(BODY_RADIUS, BODY_RADIUS, BODY_RADIUS);
+        starGo.addComponent(MeshFilter).sharedMesh = Mesh.createSphere(1, 32);
         const starMaterial = new StandardMaterial();
-        starMaterial.albedoColor = STAR;
+        starMaterial.albedoColor = sunTexture ? Color.white : STAR;
+        if (sunTexture) starMaterial.albedoTexture = sunTexture;
+        // Emissive as well as lit: a star is its own light source, and without
+        // this its far side is a black crescent.
         starMaterial.emissionColor = new Color(0.95, 0.72, 0.25, 1);
+        if (sunTexture) starMaterial.emissionTexture = sunTexture;
         starGo.addComponent(MeshRenderer).sharedMaterial = starMaterial;
 
         const lightGo = new GameObject("Star light");
@@ -176,21 +214,73 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
         light.color = STAR;
 
         this._satellite = new GameObject("Satellite");
-        this._satellite.transform.localScale = new Vector3(0.045, 0.045, 0.045);
-        this._satellite.addComponent(MeshFilter).sharedMesh = Mesh.createSphere(1, 14);
+        this._satellite.transform.localScale = new Vector3(SATELLITE_RADIUS, SATELLITE_RADIUS, SATELLITE_RADIUS);
+        this._satellite.addComponent(MeshFilter).sharedMesh = Mesh.createSphere(1, 24);
         const satelliteMaterial = new StandardMaterial();
-        satelliteMaterial.albedoColor = SATELLITE;
-        satelliteMaterial.emissionColor = new Color(0.20, 0.35, 0.55, 1);
+        satelliteMaterial.albedoColor = earthTexture ? Color.white : SATELLITE;
+        if (earthTexture) satelliteMaterial.albedoTexture = earthTexture;
+        satelliteMaterial.emissionColor = new Color(0.10, 0.16, 0.26, 1);
         this._satellite.addComponent(MeshRenderer).sharedMaterial = satelliteMaterial;
 
         const trailGo = new GameObject("Trail");
         this._trail = trailGo.addComponent(LineRenderer);
         this._trail.useWorldSpace = true;
-        this._trail.startWidth = 0.012;
-        this._trail.endWidth = 0.012;
+        this._trail.startWidth = 0.006;
+        this._trail.endWidth = 0.006;
         this._trail.startColor = TRAIL;
         this._trail.endColor = TRAIL;
         trailGo.setActive(false);
+    }
+
+    /**
+     * The starfield behind the diagram, sharing `solar-system-scenario`'s
+     * panorama.
+     *
+     * A quad rather than `RenderSettings.skybox`, which does not work here:
+     * three.js draws a scene background as a unit box through the camera's
+     * projection, and a unit box under an *orthographic* projection is a small
+     * square in the middle of the screen rather than a sky. Measured — it came
+     * out 360px across on a 1600px view.
+     */
+    private async _createBackdrop(): Promise<void> {
+        const sky = await Resources.tryLoad(Texture2D, "skybox/stars_panorama");
+        if (!sky) return;
+
+        this._backdrop = new GameObject("Starfield");
+        this._backdrop.addComponent(MeshFilter).sharedMesh = Mesh.createPlane(1, 1);
+        const material = new StandardMaterial();
+        // Unlit: the only light is the star, and a backdrop lit by it would be a
+        // pool of light in the middle and black at the corners.
+        material.albedoColor = Color.black;
+        material.emissionColor = new Color(0.55, 0.55, 0.55, 1);
+        material.emissionTexture = sky;
+        this._backdrop.addComponent(MeshRenderer).sharedMaterial = material;
+
+        // createPlane lies in XZ facing +Y, Unity's floor; -90° about X stands it
+        // up in XY facing -Z, which is where this camera watches from.
+        this._backdrop.transform.localRotation = Quaternion.euler(-90, 0, 0);
+    }
+
+    /**
+     * Keeps the backdrop exactly filling the view.
+     *
+     * Sized from the camera every frame rather than made big once: a fixed quad
+     * would show a different crop of the sky at every zoom, and at the default
+     * one that crop is about a hundredth of the image — stars the size of the
+     * planet. Locked to the camera it behaves as a sky should, holding still
+     * while the diagram is panned and zoomed.
+     */
+    private _fitBackdrop(): void {
+        if (!this._backdrop) return;
+
+        const camera = this._camera.camera;
+        const halfHeight = camera.orthographicSize;
+        const at = camera.transform.position;
+
+        this._backdrop.transform.position = new Vector3(at.x, at.y, at.z + BACKDROP_DISTANCE);
+        this._backdrop.transform.localScale = new Vector3(
+            halfHeight * camera.aspect * 2, 1, halfHeight * 2,
+        );
     }
 
     private _pushTrail(): void {
@@ -234,7 +324,7 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
 
         if (this._showPrediction && elements.conic === "ellipse") {
             const points = conicPoints(elements, 160).map((p) => [p[0], p[1]]);
-            this._painter.polyline(points, ORBIT, 0.007);
+            this._painter.polyline(points, ORBIT, 0.005);
 
             const [ux, uy] = elements.periapsisDirection;
             const a = elements.semiMajor;
@@ -247,17 +337,17 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
                 // r2: on from the body to the empty focus. With r1 below it this
                 // is the string construction — the two lengths always sum to 2a,
                 // which is what makes the curve an ellipse and not merely an oval.
-                this._painter.line(this._orbit.x, this._orbit.y, fx, fy, R2, 0.013);
+                this._painter.line(this._orbit.x, this._orbit.y, fx, fy, R2, 0.007);
 
                 // One semi-major axis, centre to the far vertex: the length the
                 // legend calls `a`. Away from the star, as the reference draws it.
                 const ax = cx - a * ux, ay = cy - a * uy;
-                this._painter.line(cx, cy, ax, ay, SEMI_MAJOR, 0.013);
+                this._painter.line(cx, cy, ax, ay, SEMI_MAJOR, 0.009);
                 this._placeALabel((cx + ax) / 2, (cy + ay) / 2);
 
                 // Last, so they sit on top of the lines that meet at them.
-                this._painter.dot(cx, cy, 0.036, CENTRE_DOT);
-                this._painter.dot(fx, fy, 0.036, FOCUS_DOT);
+                this._painter.dot(cx, cy, 0.016, CENTRE_DOT);
+                this._painter.dot(fx, fy, 0.016, FOCUS_DOT);
             }
         }
 
@@ -265,7 +355,7 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
         // of where the body is now rather than of the predicted path, and it is
         // the line the second law is about — this length, times the speed, is
         // what sweeps equal areas in equal times.
-        this._painter.line(0, 0, this._orbit.x, this._orbit.y, R1, 0.010);
+        this._painter.line(0, 0, this._orbit.x, this._orbit.y, R1, 0.007);
 
         if (this._showVelocity && this._orbit.stopped === "none") {
             // Length in the same scale as the orbit, so the speed change
@@ -274,7 +364,7 @@ export default class OrbitalMechanics extends ScenarioBehaviour {
             this._painter.line(
                 this._orbit.x, this._orbit.y,
                 this._orbit.x + this._orbit.vx * scale, this._orbit.y + this._orbit.vy * scale,
-                VELOCITY, 0.012,
+                VELOCITY, 0.007,
             );
         }
 
