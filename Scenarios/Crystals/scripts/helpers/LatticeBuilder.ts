@@ -20,6 +20,11 @@ import { latticeVectors, toCartesian, type Structure } from "../data/structures"
 /** Ångström → world units. */
 export const SCALE = 0.62;
 
+/** A fractional coordinate folded into [0, 1); 1 is the same site as 0. */
+function wrapFrac(f: number): number {
+    return f - Math.floor(f + 1e-6);
+}
+
 const ATOM_CAPACITY = 1300;
 const BOND_CAPACITY = 2600;
 
@@ -103,18 +108,40 @@ export class LatticeBuilder {
         const elements: string[] = [];
         const inOriginCell: boolean[] = [];
 
-        for (let i = 0; i < cells; i++) {
-            for (let j = 0; j < cells; j++) {
-                for (let k = 0; k < cells; k++) {
+        // One past the last cell on every axis, keeping only what lands on or
+        // inside the block. Tiling the basis alone leaves every site at a
+        // fractional coordinate below 1, so a single cell drew eight ions bunched
+        // in one octant of a box eight times their volume — the outline looked
+        // unrelated to the contents, and no ion had the six neighbours the
+        // scenario's own caption promises. The extra copies are the periodic
+        // images sitting on the far faces, edges and corners, which is how a unit
+        // cell is drawn anywhere it is drawn at all.
+        for (let i = 0; i <= cells; i++) {
+            for (let j = 0; j <= cells; j++) {
+                for (let k = 0; k <= cells; k++) {
                     for (const site of structure.basis) {
-                        const at = toCartesian(structure, site.frac[0] + i, site.frac[1] + j, site.frac[2] + k);
+                        // Wrapped into [0, 1) first. A basis may legitimately name
+                        // a site at fraction 1 — NaCl's does, for two of its
+                        // chlorides — and that is the same site as 0 one cell over.
+                        // Tiled as written it can only ever land on the far face,
+                        // so the near one came out four ions short of a full grid.
+                        const u = wrapFrac(site.frac[0]) + i;
+                        const v = wrapFrac(site.frac[1]) + j;
+                        const w = wrapFrac(site.frac[2]) + k;
+                        if (u > cells + 1e-6 || v > cells + 1e-6 || w > cells + 1e-6) continue;
+
+                        const at = toCartesian(structure, u, v, w);
                         positions.push([
                             (at[0] - centre[0]) * SCALE,
                             (at[1] - centre[1]) * SCALE,
                             (at[2] - centre[2]) * SCALE,
                         ]);
                         elements.push(site.element);
-                        inOriginCell.push(i === 0 && j === 0 && k === 0);
+                        // On or inside the origin cell, boundary images included:
+                        // they belong to it as much as to the neighbour they came
+                        // from, and the highlight is about which box you are
+                        // looking at.
+                        inOriginCell.push(u <= 1 + 1e-6 && v <= 1 + 1e-6 && w <= 1 + 1e-6);
                     }
                 }
             }
