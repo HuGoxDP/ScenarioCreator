@@ -270,6 +270,11 @@ export default class SolarSystem extends ScenarioBehaviour {
         o.radius = r; o.speed = s; if (t) o.tilt = t;
     }
     private _addRotator(go: GameObject, speed: number): void {
-        (go.addComponent(Rotator) as any).speed = speed;
+        // Negated so a planet spins the way it orbits, which is what every planet
+        // here does — the two components disagreed on sign. `Orbiter` carries a
+        // body from +X toward +Z, while a positive rotation about +Y takes +Z
+        // toward +X, as Unity defines it. Orbits ran anticlockwise and spins
+        // clockwise until this.
+        (go.addComponent(Rotator) as any).speed = -speed;
     }
 }

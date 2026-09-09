@@ -49,6 +49,10 @@ const ELEMENT_COLORS: Record<string, Color> = {
 const MAX_CARRIERS = 220;
 /** Metres of wire between carriers at one ampere. */
 const SPACING_AT_1A = 1.9;
+/** Radius of a drawn carrier. */
+const CARRIER_SIZE = 0.14;
+/** Distance over which a carrier fades in at a wire's start and out at its end. */
+const CARRIER_FADE = 0.55;
 /** World units a carrier travels per second per ampere. */
 const CARRIER_SPEED = 2.4;
 
@@ -233,8 +237,6 @@ export default class Circuits extends ScenarioBehaviour {
             return;
         }
 
-        this._scale.set(0.14, 0.14, 0.14);
-
         // Distance covered by the wires already placed, so the carrier pattern
         // runs along the whole path rather than restarting on each wire.
         let travelled = 0;
@@ -263,13 +265,37 @@ export default class Circuits extends ScenarioBehaviour {
             // Subtracting `travelled` continues the pattern across the junction,
             // so a carrier leaves one wire as another enters the next, rather than
             // each wire recirculating its own carriers from nowhere.
+            //
+            // It only lines up where the current does. Wires meeting at a junction
+            // that carry the same current stay in step; where the current splits it
+            // cannot, because the spacing carries the current and a branch that
+            // takes less of it is spaced wider. That is honest — charge divides
+            // there — but it is why the ends still need the inset below.
             const offset = (((this._phase - travelled) % spacing) + spacing) % spacing;
 
-            // `d < length`, not `<=`: pointAlong wraps its parameter, so t = 1
-            // lands back at the wire's start instead of its end.
+            // A carrier shrinks away as it reaches a wire's end and grows back on
+            // the next. Something has to appear and disappear — the wires are
+            // finite and drawn one at a time — so the only question is where and
+            // how abruptly, and a hard edge anywhere reads as a carrier winking
+            // into existence. That was the report: electrons appearing and
+            // vanishing, marked at the junctions.
+            //
+            // It also settles the doubling. Two wires meeting at a point both draw
+            // there, and at full size that is one dot on top of another blinking as
+            // their phases drift; faded, both are nearly nothing by the time they
+            // reach it.
+            //
+            // `d < length`: pointAlong wraps its parameter, so t = 1 would land
+            // back at the wire's start. Anything that close is invisible anyway.
+            const fadeOver = Math.min(CARRIER_FADE, length * 0.35);
             for (let d = offset; d < length && index < MAX_CARRIERS; d += spacing) {
+                const fade = Math.min(1, Math.min(d, length - d) / fadeOver);
+                if (fade <= 0.02) continue;
+
                 const at = pointAlong(wire.points, d / Math.max(length, 1e-6));
                 this._scratch.set(at[0], at[1], 0.25);
+                const size = CARRIER_SIZE * fade;
+                this._scale.set(size, size, size);
                 this._carriers.setInstanceTransform(index, this._scratch, Quaternion.identity, this._scale);
                 index++;
             }
