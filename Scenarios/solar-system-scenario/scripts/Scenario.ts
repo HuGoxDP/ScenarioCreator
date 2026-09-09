@@ -59,6 +59,18 @@ const PLANETS: PlanetDef[] = [
 export default class SolarSystem extends ScenarioBehaviour {
     private _camera!: ICameraRig;
     private _earthTracker!: GameObject;
+
+    /**
+     * Everything the inspect camera can sit on, in the order F walks them.
+     *
+     * Collected as the bodies are built rather than looked up afterwards: the
+     * radius is only known here, and framing a body needs it — the Sun is five
+     * times Earth and the Moon a third of it, so one fixed distance suits none
+     * of them.
+     */
+    private readonly _bodies: { name: string; go: GameObject; radius: number }[] = [];
+    /** Index into `_bodies`, or -1 for the whole-system view. */
+    private _focus = -1;
     private _paused = false;
     private _loadedTextures: Texture2D[] = [];
 
@@ -98,6 +110,7 @@ export default class SolarSystem extends ScenarioBehaviour {
         MemoryProfiler.logReport();
         console.log("[SolarSystem] Setup complete");
         console.log("[SolarSystem] 1=Orbit  2=Fly  3=Follow(Earth)  P=Pause  M=Memory");
+        console.log("[SolarSystem] F/G=inspect next/previous body (pauses)  0=back to system view");
         console.log(`[SolarSystem] Cache: ${Resources.cacheSize} assets`);
     }
 
@@ -125,6 +138,11 @@ export default class SolarSystem extends ScenarioBehaviour {
         if (Input.getKeyDown(KeyCode.Digit1)) this._camera.activateOrbit();
         if (Input.getKeyDown(KeyCode.Digit2)) this._camera.activateFly();
         if (Input.getKeyDown(KeyCode.Digit3)) this._camera.activateFollow(this._earthTracker.transform);
+
+        // Inspection: F walks the bodies, G walks back, 0 returns to the system.
+        if (Input.getKeyDown(KeyCode.KeyF)) this._step(1);
+        if (Input.getKeyDown(KeyCode.KeyG)) this._step(-1);
+        if (Input.getKeyDown(KeyCode.Digit0)) this._overview();
 
         if (Input.getKeyDown(KeyCode.KeyP)) {
             this._paused = !this._paused;
@@ -195,6 +213,8 @@ export default class SolarSystem extends ScenarioBehaviour {
         const light = go.addComponent(PointLight);
         light.intensity = 4; light.range = 200; light.decay = 1;
         light.color = new Color(1, 0.95, 0.85, 1);
+
+        this._bodies.push({ name: "Sun", go, radius: SIZE.sun });
     }
 
     private async _createAllPlanets(): Promise<void> {
@@ -228,6 +248,7 @@ export default class SolarSystem extends ScenarioBehaviour {
                 });
             }
 
+            this._bodies.push({ name: def.name, go: planetGo, radius });
             this._addOrbit(planetGo, ORBIT[def.key], SPEED[def.key], def.tilt);
             if (def.rotationSpeed > 0) this._addRotator(planetGo, def.rotationSpeed);
 
@@ -263,6 +284,44 @@ export default class SolarSystem extends ScenarioBehaviour {
         moonGo.transform.parent = this._earthTracker.transform;
         const orb = moonGo.addComponent(Orbiter) as any;
         orb.radius = 1.2; orb.speed = 120; orb.useLocalSpace = true;
+
+        this._bodies.push({ name: "Moon", go: moonGo, radius: SIZE.moon });
+    }
+
+    /**
+     * Moves the inspection camera `by` bodies through the list, wrapping.
+     *
+     * Entering inspection pauses the simulation. Looking closely at a planet is
+     * the one thing you cannot do while it is moving — it drifts out of frame and
+     * spins its own features away — so the pause is the feature, not a side
+     * effect. `P` still toggles it by hand, and `0` resumes on the way out.
+     */
+    private _step(by: number): void {
+        if (this._bodies.length === 0) return;
+
+        const count = this._bodies.length;
+        this._focus = this._focus < 0
+            ? (by > 0 ? 0 : count - 1)
+            : (((this._focus + by) % count) + count) % count;
+
+        const body = this._bodies[this._focus];
+        this._camera.inspect(body.go.transform, body.radius);
+
+        if (!this._paused) {
+            this._paused = true;
+            setSimulationPaused(true);
+        }
+        console.log(`[Inspect] ${body.name}  (${this._focus + 1}/${count})  — drag to turn, wheel to zoom`);
+    }
+
+    /** Back to the whole system, and back to running. */
+    private _overview(): void {
+        this._focus = -1;
+        this._camera.activateOrbit();
+        if (this._paused) {
+            this._paused = false;
+            setSimulationPaused(false);
+        }
     }
 
     private _addOrbit(go: GameObject, r: number, s: number, t = 0): void {

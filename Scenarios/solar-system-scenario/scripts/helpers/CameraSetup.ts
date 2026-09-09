@@ -32,6 +32,21 @@ export interface ICameraRig {
     /** Switch to follow camera tracking a target transform. */
     activateFollow(target: Transform): void;
 
+    /**
+     * Orbit one body close up, at a distance scaled to its own size.
+     *
+     * The point of this over {@link activateFollow} is that follow has a fixed
+     * offset — the same five units from the Sun as from the Moon, and always from
+     * the same side. Inspect keeps the mouse controls: drag to change the angle,
+     * wheel to change the distance, both bounded by the body's radius so a small
+     * moon and a large planet frame the same way.
+     *
+     * @param target — the body to sit on. Its position is read every frame, so
+     *                 this keeps working while the body orbits.
+     * @param radius — the body's radius in world units; sets the distance limits.
+     */
+    inspect(target: Transform, radius: number): void;
+
     /** The main Camera component (for reading FOV, aspect, etc.). */
     readonly camera: Camera;
 }
@@ -133,32 +148,69 @@ export function createCameraRig(config: CameraConfig = {}): ICameraRig {
 
     followGo.addComponent(CinemachineHardLookAtAim);
 
+    // ── VCam 4: Inspect ──
+    //
+    // An orbital body rather than a second follow: `CinemachineOrbitalBody`
+    // already takes its centre from the vcam's follow target every frame, so
+    // pointing it at a planet costs nothing and the drag/wheel controls come with
+    // it. Distance is set per target in `inspect`, because framing the Sun and
+    // framing the Moon at the same five units is what made the follow camera
+    // useless for looking at anything.
+
+    const inspectGo = new GameObject("VCam Inspect");
+    const inspectVCam = inspectGo.addComponent(CinemachineVirtualCamera);
+    inspectVCam.priority = 0;
+    inspectVCam.fieldOfView = fov;
+
+    const inspectBody = inspectGo.addComponent(CinemachineOrbitalBody);
+    inspectBody.orbitSpeed = 0.3;
+    inspectBody.zoomSpeed = 0.4;
+    // Panning would slide the centre off the body it is meant to be holding.
+    inspectBody.enablePan = false;
+    inspectBody.damping = 6;
+
+    inspectGo.addComponent(CinemachineOrbitalAim);
+
     // ── Build facade ──
+
+    const all = [orbitVCam, flyVCam, followVCam, inspectVCam];
+    /** Raises one virtual camera and lowers the rest; the list grows with the rig. */
+    const solo = (active: CinemachineVirtualCamera): void => {
+        for (const vcam of all) vcam.priority = vcam === active ? 10 : 0;
+    };
 
     const rig: ICameraRig = {
         camera: cam,
 
         activateOrbit() {
-            orbitVCam.priority = 10;
-            flyVCam.priority = 0;
-            followVCam.priority = 0;
+            solo(orbitVCam);
             console.log("[Camera] → Orbit");
         },
 
         activateFly() {
-            flyVCam.priority = 10;
-            orbitVCam.priority = 0;
-            followVCam.priority = 0;
+            solo(flyVCam);
             console.log("[Camera] → Fly (click to lock cursor)");
         },
 
         activateFollow(target: Transform) {
             followVCam.follow = target;
             followVCam.lookAt = target;
-            followVCam.priority = 10;
-            orbitVCam.priority = 0;
-            flyVCam.priority = 0;
+            solo(followVCam);
             console.log("[Camera] → Follow");
+        },
+
+        inspect(target: Transform, radius: number) {
+            inspectVCam.follow = target;
+            inspectVCam.lookAt = target;
+
+            // In radii, so every body is framed the same way whatever its size:
+            // start far enough out to see the whole disc with room around it, and
+            // let the wheel come in to nearly touching or back out to a wide shot.
+            inspectBody.distance = radius * 4;
+            inspectBody.minDistance = radius * 1.25;
+            inspectBody.maxDistance = radius * 40;
+
+            solo(inspectVCam);
         },
     };
 
