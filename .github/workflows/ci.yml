@@ -1,0 +1,200 @@
+# Build every scenario on every push and pull request.
+#
+# WHAT IT CATCHES
+#   A scenario that no longer compiles, that has zero or several ScenarioBehaviour
+#   subclasses, or that packages into an archive the engine cannot load; and an
+#   engine tarball that no longer installs, no longer type-checks the scenarios,
+#   or no longer runs them. Until now each of those surfaced on the author's
+#   machine or not at all. Apart from `npm ci`, every step is a command the
+#   README documents, written the way it documents it, so a green run means
+#   what the same commands mean locally.
+#
+# WHY WINDOWS
+#   The builder is Windows-only today, deliberately (CLAUDE.md, "Build & Dev"):
+#   findTar() packages with %SystemRoot%\System32\tar.exe (bsdtar), `clean:release`
+#   is PowerShell, and verify-render.mjs looks for Edge or Chrome at their
+#   Windows install paths. windows-latest has bsdtar, PowerShell, Git Bash and
+#   Edge preinstalled, and it is the platform the archives are built and
+#   published from, so what passes here is what ships. On Linux this would be
+#   testing a tar shim rather than the builder; a cross-platform packer is
+#   separate work.
+#
+# WHAT IT LEAVES OUT, ON PURPOSE
+#   --ktx2. KTX-Software is not installed on hosted runners. Without --strict a
+#   failed conversion only warns and packages the originals, so --ktx2 here would
+#   build exactly the archives below while appearing to have tested the encode;
+#   with --strict it would fail every run for a reason that says nothing about
+#   the commit. KTX2 stays a local step, checked by inspecting the ZIP.
+
+name: CI
+
+on:
+  push:
+    # Every branch, not only master: scenario work happens on branches, and a
+    # broken build is worth seeing before the merge rather than after it.
+    #
+    # So a branch with an open PR from this repo is built twice: as the pushed
+    # commit, and as the PR's merge with master. Those are different refs, so
+    # neither run cancels the other, and they are not quite the same test: the
+    # second is what merging would produce. Accepted rather than trimmed — a
+    # fork's PR only ever gets the pull_request run, a branch without a PR only
+    # the push run, and the repo is public, so the second run costs queue time,
+    # not money.
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A newer push to a branch or PR makes the run in flight there moot, so it is
+  # cancelled. master is exempt: every run there gets a group of its own, so
+  # every master commit ends with a result. `cancel-in-progress: false` for
+  # master alone would not do that — a group holds one pending run, and a
+  # third push would still replace the second before it started.
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.run_id || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & verify scenarios
+    runs-on: windows-latest
+    # A full run is minutes, most of them verify-render rasterising on the CPU.
+    # The cap is for a browser that hangs instead of exiting.
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        # Already the default on Windows runners. Stated, because two things
+        # below depend on it:
+        #
+        #   * `npm run x -- --flag` reaches the script intact. PowerShell treats
+        #     a bare `--` as its own end-of-parameters token and strips it before
+        #     a .ps1 sees its arguments, so npm.ps1 up to npm 10.9.2 ran the
+        #     script with *no* arguments. 10.9.3 (Node 22.18+) re-parses the
+        #     original statement to get them back, and any Node 22 a runner
+        #     provides today is past that, so the documented commands work
+        #     verbatim. A step further down catches it if that ever regresses.
+        #   * Only the LAST native command's exit code fails a pwsh step; one
+        #     that fails earlier in a multi-line step is ignored. So every step
+        #     runs exactly one command.
+        shell: pwsh
+
+    steps:
+      # All three actions at v7, their current major. The v4s declare the
+      # end-of-life Node 20 runtime: runners still run them, moved onto Node 24,
+      # with a deprecation warning on every run.
+      #
+      # Nothing after checkout talks to GitHub through git, so the token is not
+      # left on disk where `npm ci`'s install scripts could read it.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Node 22 rather than virtual-lab's 20: 20 is end-of-life, and 22 is what
+      # ships the npm.ps1 described above.
+      #
+      # No npm cache, on purpose: no `cache: npm`, and `package-manager-cache:
+      # false`, because setup-node v6 and later switch the cache on by
+      # themselves once package.json names npm in `packageManager` or
+      # `devEngines.packageManager`. Nothing names it today; the setting is
+      # there so that adding the field later cannot quietly bring the cache
+      # back. npm's cache is addressed by the integrity the lockfile records,
+      # and with a warm cache `npm ci` installs the engine *from the cache*
+      # instead of reading WebEngineTS-0.1.0.tgz. A tarball replaced without a lockfile update
+      # (`release:local -- --no-install`) then installs the previous engine and
+      # passes. With a cold cache, as here, it fails with EINTEGRITY — which is
+      # the point. Both reproduced with npm 10.9; the cache would save seconds
+      # on 21 packages.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # `npm ci`, not `npm install`: it refuses a lockfile that disagrees with
+      # package.json, and checks the engine tarball against the sha512 the
+      # lockfile recorded. The lockfile is generated on Windows, which is where
+      # this runs; nothing in it is platform-specific anyway.
+      - name: Install
+        run: npm ci
+
+      # Discovery on its own: the builder refuses a name that exists in both
+      # Scenarios/ and TestScenarios/, and this is the cheapest place to see it.
+      - name: List scenarios
+        run: npm run build:list
+
+      - name: Build production scenarios
+        run: npm run build:all
+
+      # `--all` means "everything publishable" — that is how a routine
+      # rebuild-and-publish is kept from putting a benchmark scene in front of a
+      # student. Check it still means that before test scenarios are added in.
+      - name: Check --all built production only
+        run: |
+          if (Test-Path ReleaseScenarios/test) {
+            Write-Output "::error::npm run build:all wrote ReleaseScenarios/test; --all must not build TestScenarios/"
+            exit 1
+          }
+
+      # `--tests` only widens `--all`; on its own it selects nothing and the
+      # builder stops with "No scenario selected". There is no tests-only switch,
+      # so this rebuilds production as well. That costs seconds and keeps the
+      # command the one the README documents.
+      - name: Build test scenarios
+        run: npm run build -- --all --tests
+
+      - name: Emit streaming manifests
+        run: npm run manifest:all -- --tests
+
+      # Every check below reports on the manifests it finds, so a manifest that
+      # was never emitted is not a failure to any of them. One reason it could
+      # go missing is the `--` above being lost on the way to the script: the
+      # run would then cover production only, and still pass. Check the set.
+      #
+      # Only the two folders archives are written to. objects/ keeps each asset
+      # under its own extension, so a .zip shipped as an asset is stored there
+      # and is content, not an archive. A missing test/ stops the step too: the
+      # step above would then not have built the test scenarios.
+      - name: Check every archive has a manifest
+        run: |
+          $missing = Get-ChildItem ReleaseScenarios/*.zip, ReleaseScenarios/test/*.zip -File |
+            Where-Object { -not (Test-Path ($_.FullName -replace '\.zip$', '.scenario.json')) }
+          foreach ($zip in $missing) { Write-Output "::error::no streaming manifest beside $($zip.FullName)" }
+          if ($missing) { exit 1 }
+
+      # Every file a manifest references exists and hashes as recorded.
+      - name: Verify manifests
+        run: npm run manifest:verify
+
+      # The engine's own StreamingAssetSource loads every manifest over HTTP,
+      # LOD levels included. Needs only Node and a loopback port.
+      - name: Verify manifests load through the engine
+        run: npm run manifest:verify-fetch
+
+      # Headless Edge loads every scenario from both the ZIP and the manifest
+      # and compares what each built. findBrowser() takes Edge at its
+      # Program Files (x86) path, where windows-latest installs it, and
+      # swiftshader supplies WebGL on a runner with no GPU — the same flags the
+      # author runs locally.
+      #
+      # RENDER_TIMEOUT_MS is the whole run's budget, not a pass criterion: each
+      # scenario must still produce a frame within the harness's own limit.
+      # All seventeen took 2m10s on a 4-core machine against a 5-minute default,
+      # and a software rasteriser on shared hardware varies more than that.
+      - name: Verify both load paths render
+        env:
+          RENDER_TIMEOUT_MS: 600000
+        run: npm run manifest:verify-render
+
+      # The exact archives this run built and checked, plus the manifests and
+      # their objects/ store — served as static files, the folder is a complete
+      # origin. Uploaded when a check fails too: that is when they are wanted.
+      - name: Upload ReleaseScenarios
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ReleaseScenarios
+          path: ReleaseScenarios/
+          retention-days: 14
+          if-no-files-found: warn
