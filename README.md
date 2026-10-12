@@ -75,6 +75,26 @@ scenario are stored once.
 
 **The platform cannot consume manifests yet** — uploads through `/admin` are still ZIPs only.
 
+## CI
+
+`.github/workflows/ci.yml` runs on every push (any branch), every pull request, and by hand
+(*Run workflow*, once the workflow is on `master`). It runs, in order: `npm ci`, `build:list`,
+`build:all`, `build -- --all --tests`, `manifest:all -- --tests`, then `manifest:verify`,
+`manifest:verify-fetch` and `manifest:verify-render`. Two small checks sit between them: `--all`
+must not have built a test scenario, and every archive must have a manifest beside it. A red run
+means a scenario does not build, or the engine tarball does not install, compile the scenarios
+or run them.
+
+**The archives are downloadable.** Each run uploads `ReleaseScenarios/` as an artifact named
+`ReleaseScenarios` (the run's *Summary* page, under *Artifacts*, kept 14 days): the exact ZIPs
+CI built and checked, plus the manifests and their `objects/` store. Unzipped and served as
+static files, it is a complete origin.
+
+**It runs on Windows because the builder does.** Packaging uses `System32\tar.exe` (bsdtar),
+`clean:release` is PowerShell, and `verify-render` looks for Edge at its Windows path.
+`windows-latest` has all of them preinstalled and matches where the archives are built and
+published from. `--ktx2` is not run: KTX-Software is not installed on hosted runners.
+
 ## Notes
 
 - Scenarios are **content only** — no embedded benchmarking or optimization toggles.

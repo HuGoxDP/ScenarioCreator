@@ -152,6 +152,14 @@ npm run manifest:verify-render      # headless browser, both load paths, compare
 Serving `ReleaseScenarios/` with any static file server is a complete origin — no `baseUrl` is
 written, so the manifest's own location is the base.
 
+**CI** (`.github/workflows/ci.yml`, `windows-latest`) runs `npm ci`, `build:list`, the builds
+(`--all`, then `--all --tests`, never `--ktx2`), `manifest:all -- --tests` and the three verifiers
+on every push and PR, and uploads `ReleaseScenarios/` as an artifact. Keep npm caching out of it:
+no `cache: npm`, and keep `package-manager-cache: false`, since setup-node turns the cache on by
+itself once `package.json` names npm in `packageManager`. A warm cache installs the engine by the
+lockfile's integrity instead of reading the `.tgz`, so a tarball swapped without a lockfile update
+would build against the previous engine and pass.
+
 **Either shell works — the builder no longer depends on PATH order.** Both external binaries it
 shells out to are ambiguous on Windows, so each is resolved explicitly:
 
