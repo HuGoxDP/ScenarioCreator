@@ -24,10 +24,11 @@ Build pipeline that turns scenario **source** into distributable `.zip` archives
 | `Scenarios/` | `ReleaseScenarios/` | Production — what students see in the catalog. |
 | `TestScenarios/` | `ReleaseScenarios/test/` | Measurement and engine testing: benchmark scenes, feature demos. |
 
-`--all` builds **production only**. Test scenarios are opt-in — `--tests`, or name them
+`--all` builds **production only**. Test scenarios are opt-in — `--all --tests`, or name them
 explicitly — so a routine rebuild-and-publish cannot put a benchmark scene in front of a
-student. A name may not exist in both roots; the builder refuses, because then "is this
-publishable?" would have no answer.
+student. `--tests` only widens `--all`: on its own it selects nothing and the builder stops. A
+name may not exist in both roots; the builder refuses, because then "is this publishable?" would
+have no answer.
 
 User-facing usage lives in `README.md`. **This file is the working guide**: the rules that are
 easy to break and the reasons behind them.

@@ -4,7 +4,8 @@ Centralized build pipeline for scenarios.
 
 Production scenarios live in `Scenarios/` and build to `ReleaseScenarios/`.
 Scenarios used for measurement and engine testing live in `TestScenarios/` and build to
-`ReleaseScenarios/test/` — they are never included by `--all`, only by `--tests` or by name.
+`ReleaseScenarios/test/` — they are never included by `--all` alone, only by `--all --tests` or
+by name.
 
 ## How it works
 

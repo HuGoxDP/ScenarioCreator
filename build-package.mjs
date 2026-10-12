@@ -405,7 +405,7 @@ if (options.listOnly) {
     for (const name of byKind("production")) console.log(`- ${name}`);
 
     const tests = byKind("test");
-    console.log("\nTest scenarios (TestScenarios/ — built only with --tests or by name):");
+    console.log("\nTest scenarios (TestScenarios/ — built only with --all --tests or by name):");
     if (tests.length === 0) console.log("- (none)");
     for (const name of tests) console.log(`- ${name}`);
 
