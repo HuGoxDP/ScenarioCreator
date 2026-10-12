@@ -1,9 +1,9 @@
 # TASK — benchmark archives, against `WebEngineTS-Benchmarks/tasks/scenariocreator.md`
 
-**Origin:** the benchmark suite rebuilding the paper's tables for the 24 August resubmission
-found that three of its optimization flags had nothing to act on, and that the cause was on this
-side — how the archives are packed. Its task file is the tracker; this file records what was done
-here, with the measurements, so a number in the paper can be traced back to a commit.
+**Origin:** the benchmark suite, re-running its measurements in August, found that three of its
+optimization flags had nothing to act on, and that the cause was on this side — how the archives
+are packed. Its task file is the tracker; this file records what was done here, with the
+measurements, so a benchmark number can be traced back to a commit.
 
 The rule that governs all of it: **no benchmark logic in scenario code.** No URL parameters, no
 `if (benchmark)`, no optimization toggles. The archives are content and the harness measures
@@ -141,9 +141,9 @@ copies **all three** of position, rotation and scale regardless of how many were
 
 **So break-even is four writes, and this archive has three.** It is expected to show the `dirty=1`
 penalty collapsing towards zero, not the optimization winning. Two points — W=1 and W=3 — give the
-direction and the slope, which is what the paper needs to replace the "proportional to how much of
-the scene is static" wording; a *win* would need W≥5, i.e. writing one property more than once per
-frame, and S1.2 forbids adding writes to cross the break-even point. That would need a content
+direction and the slope, which is what it takes to replace the "proportional to how much of the
+scene is static" wording with a measured claim; a *win* would need W≥5, i.e. writing one property
+more than once per frame, and S1.2 forbids adding writes to cross the break-even point. That would need a content
 justification, not a benchmark one.
 
 **Verified at runtime**, setters wrapped with counters, totals divided by engine frames × movers:
@@ -173,10 +173,10 @@ scenarios should **not** live in ScenarioCreator, and moving them costs nothing 
 because fidelity is in the archive format rather than in the authoring tool. Its ordering puts
 the move before S1.1, which would make this one parameterised source instead of four folders.
 
-It was done here anyway, as four folders, because the sweep is wanted for the resubmission and
-the same README defers the move ("half a day of pipeline work", not before the 24th). These four
-folders are precisely what the move deletes; that is expected, and the one-line-diff property
-makes them trivial to fold into a single parameterised source when it happens.
+It was done here anyway, as four folders, because the sweep was wanted sooner than the move and
+the same README defers the move ("half a day of pipeline work"). These four folders are
+precisely what the move deletes; that is expected, and the one-line-diff property makes them
+trivial to fold into a single parameterised source when it happens.
 
 ### The scene is not drawing what the archive describes
 
@@ -198,8 +198,8 @@ Full audit, the exact defect and the engine-side fix are entry 4 of
    inside of three mesh types is cheaper than the scene the archive describes. `objects`,
    `triangles` and the transform workload are all still exactly as reported — the defect is in
    which faces survive culling, not in what the scene contains. But wording like "a grid of
-   primitives over a floor plane" describes something the renderer never produced, and Section 5
-   should not use it until the engine is fixed and the scene re-measured.
+   primitives over a floor plane" describes something the renderer never produced, and no reported
+   result should use it until the engine is fixed and the scene re-measured.
 
 There is **no content workaround**: `doubleSided` is a field of `IShaderSource`, not of
 `StandardMaterial`, so a scenario cannot ask for both faces. Nothing in this repository can fix
