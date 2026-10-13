@@ -121,10 +121,18 @@ honest limit of deriving identity from a path.
 - `manifest.json` is at the archive **root** (not nested in a subdirectory);
 - it is valid JSON;
 - `manifestVersion`, `id`, `name`, `version` and `entryPoint` are all present;
-- `scripts/<entryPoint>` actually exists inside the archive.
+- `manifestVersion` has a major version the student player reads — only 1 (this repo writes `"1.0"`);
+- `scripts/<entryPoint>` actually exists inside the archive;
+- every `*.scene.json` / `*.prefab.json`, in any directory and any letter case, is a JSON object
+  whose `version` the player reads — absent means 1, and 1 is the only one. Version 2 ("link mode",
+  prefab instances saved as a link plus changes) is refused: the deployed player checks no version
+  and would load it hollow.
 
-A build that satisfies this repo's own rules satisfies that automatically. If an upload is
-refused, the message names the exact reason.
+A build that satisfies this repo's own rules satisfies all of that automatically except the last:
+`assets/` is copied verbatim, so a scene or prefab saved in link mode reaches the archive as it is
+— links have to be expanded before packaging. `import:assets` applies the same scene check, and
+refuses a streaming `schema` other than 1. If an upload is refused, the message names the exact
+reason; the rules are stated once in `virtual-lab/backend/player-formats.js`.
 
 ## Build & Dev
 
