@@ -94,3 +94,37 @@ export class TaskProgress {
         return this.score === 1;
     }
 }
+
+export interface TaskResult {
+    score: number;
+    completed: boolean;
+}
+
+/**
+ * Glue between the checks and the host: re-checks a task and passes the score
+ * to `sink` (the scenario's `reportResult`) once from {@link start}, then only
+ * when the solved set changes. Before `start()` it tracks silently, because the
+ * engine accepts reports only from `start()` on while the scenario builds its
+ * first state in `awake()`.
+ */
+export class TaskReporter {
+    readonly progress = new TaskProgress();
+    private _reporting = false;
+
+    constructor(private readonly _sink: (result: TaskResult) => void) {}
+
+    start(): void {
+        this._reporting = true;
+        this._report();
+    }
+
+    evaluate(key: TemplateKey, emf: number, solution: Solution): void {
+        if (this.progress.evaluate(key, emf, solution)) this._report();
+    }
+
+    private _report(): void {
+        if (this._reporting) {
+            this._sink({ score: this.progress.score, completed: this.progress.completed });
+        }
+    }
+}

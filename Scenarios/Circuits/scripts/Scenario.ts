@@ -31,7 +31,7 @@ import {
     layoutFor, pathLength, pointAlong, type Layout, type Glyph, type Point,
 } from "./helpers/Layout";
 import { TEMPLATES, solve, validateSolver, type Solution, type TemplateKey } from "./helpers/Circuit";
-import { TASKS, TaskProgress } from "./helpers/Tasks";
+import { TASKS, TaskReporter } from "./helpers/Tasks";
 
 const WIRE = new Color(0.62, 0.70, 0.82, 1);
 const DEAD_WIRE = new Color(0.32, 0.36, 0.44, 1);
@@ -81,11 +81,10 @@ export default class Circuits extends ScenarioBehaviour {
 
     // Task mode: the platform owns the submit button, so the scenario only
     // reports the score whenever the set of solved tasks changes.
-    private readonly _tasks = new TaskProgress();
+    private readonly _reporter = new TaskReporter((result) => this.reportResult(result));
+    private readonly _tasks = this._reporter.progress;
     private _taskRows: UIText[] = [];
     private _taskHeader!: UIText;
-    /** reportResult is accepted from start() on, not during awake(). */
-    private _reporting = false;
 
     private readonly _scratch = new Vector3(0, 0, 0);
     private readonly _scale = new Vector3(1, 1, 1);
@@ -116,8 +115,7 @@ export default class Circuits extends ScenarioBehaviour {
 
     override start(): void {
         // The state built during awake(), which could not be reported then.
-        this._reporting = true;
-        this._reportTasks();
+        this._reporter.start();
     }
 
     override update(): void {
@@ -155,14 +153,8 @@ export default class Circuits extends ScenarioBehaviour {
         this._refreshReadout();
         // Only the circuit on screen is re-checked: the sliders are shared, so
         // re-checking the other three would unsolve tasks the student left.
-        const changed = this._tasks.evaluate(this._template, this._emf, this._solution);
+        this._reporter.evaluate(this._template, this._emf, this._solution);
         this._refreshTasks();
-        if (changed) this._reportTasks();
-    }
-
-    private _reportTasks(): void {
-        if (!this._reporting) return;
-        this.reportResult({ score: this._tasks.score, completed: this._tasks.completed });
     }
 
     private _refreshTasks(): void {

@@ -4,7 +4,7 @@ import { compileCircuitHelpers } from "./helpers.mjs";
 
 const { Circuit, Tasks } = compileCircuitHelpers();
 const { solve } = Circuit;
-const { isTaskSolved, withinTolerance, scoreOf, TaskProgress, TASKS } = Tasks;
+const { isTaskSolved, withinTolerance, scoreOf, TaskProgress, TaskReporter, TASKS } = Tasks;
 
 const solved = (key, emf, r, closed = true) => isTaskSolved(key, emf, solve(key, emf, r, closed));
 
@@ -100,4 +100,38 @@ test("TaskProgress: all four solved is completed", () => {
     p.evaluate("mixed", 12, solve("mixed", 12, [30, 40, 40], true));
     assert.equal(p.score, 1);
     assert.equal(p.completed, true);
+});
+
+test("TaskReporter: silent before start, one report from start, then only on change", () => {
+    const sent = [];
+    const r = new TaskReporter((x) => sent.push(x));
+    const at = (key, emf, res, closed = true) => r.evaluate(key, emf, solve(key, emf, res, closed));
+
+    at("single", 12, [24]);
+    assert.deepEqual(sent, [], "awake-time state is not reported");
+
+    r.start();
+    assert.deepEqual(sent, [{ score: 0.25, completed: false }], "initial state, once");
+
+    at("single", 12.1, [24]);
+    at("series", 12, [10, 10, 10]);
+    assert.equal(sent.length, 1, "unchanged solved set: no report");
+
+    at("series", 12, [20, 20, 20]);
+    assert.deepEqual(sent[1], { score: 0.5, completed: false });
+    at("single", 12, [24], false);
+    assert.deepEqual(sent[2], { score: 0.25, completed: false }, "unsolving lowers the score");
+    assert.equal(sent.length, 3);
+});
+
+test("TaskReporter: completed is true exactly when the score is 1", () => {
+    const sent = [];
+    const r = new TaskReporter((x) => sent.push(x));
+    r.start();
+    r.evaluate("single", 12, solve("single", 12, [24], true));
+    r.evaluate("series", 12, solve("series", 12, [20, 20, 20], true));
+    r.evaluate("parallel", 12, solve("parallel", 12, [10, 20, 20], true));
+    r.evaluate("mixed", 12, solve("mixed", 12, [30, 40, 40], true));
+    assert.deepEqual(sent.map((x) => x.score), [0, 0.25, 0.5, 0.75, 1]);
+    for (const x of sent) assert.equal(x.completed, x.score === 1);
 });
