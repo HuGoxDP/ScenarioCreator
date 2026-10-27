@@ -86,6 +86,9 @@ export function readScenarioMeta(scenarioDir, scenarioName) {
         // not necessarily change a byte and vice versa.
         contentVersion: typeof raw.contentVersion === "number" ? raw.contentVersion : 1,
         category: str(raw.category),
+        // Hint for the host: this scenario reports a result through
+        // reportResult. Only a literal `true` counts; anything else is absent.
+        graded: raw.graded === true ? true : undefined,
         author: raw.author && typeof raw.author === "object" ? raw.author : undefined,
         priorities: raw.streaming?.priorities ? Object.entries(raw.streaming.priorities) : [],
     };

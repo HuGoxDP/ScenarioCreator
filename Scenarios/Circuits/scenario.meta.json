@@ -5,6 +5,7 @@
   "category": "simulation",
   "version": "1.0.0",
   "contentVersion": 1,
+  "graded": true,
 
-  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name. category is 'simulation': the circuit is re-solved live from the controls. The school subject (physics / Фізика) is a platform field entered at upload in /admin. No streaming.priorities block: fully procedural, no assets."
+  "_comment": "id is the catalogue slug and goes into virtual-lab's /play/:id, so it is stated here rather than derived from the folder name. category is 'simulation': the circuit is re-solved live from the controls. The school subject (physics / Фізика) is a platform field entered at upload in /admin. graded: true — task mode reports its score through reportResult (four tasks, one per circuit). No streaming.priorities block: fully procedural, no assets."
 }

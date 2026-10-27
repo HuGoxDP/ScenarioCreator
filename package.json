@@ -7,6 +7,7 @@
     "build": "node build-package.mjs",
     "build:all": "node build-package.mjs --all",
     "build:list": "node build-package.mjs --list",
+    "test": "node --test tests/*.test.mjs",
     "manifest": "node build-manifest.mjs",
     "manifest:all": "node build-manifest.mjs --all",
     "manifest:verify": "node build-manifest.mjs --verify",

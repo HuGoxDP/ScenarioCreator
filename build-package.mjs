@@ -350,6 +350,7 @@ function buildScenario(scenarioDir, ktx2, kind) {
         ...(meta.description ? { description: meta.description } : {}),
         ...(meta.category ? { category: meta.category } : {}),
         ...(meta.author ? { author: meta.author } : {}),
+        ...(meta.graded ? { graded: true } : {}),
         engineVersion: installedEngineVersion(rootDir),
         entryPoint,
         // Stable identities, so a scene serialized while this ran from a ZIP

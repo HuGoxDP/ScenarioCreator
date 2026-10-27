@@ -31,6 +31,7 @@ import {
     layoutFor, pathLength, pointAlong, type Layout, type Glyph, type Point,
 } from "./helpers/Layout";
 import { TEMPLATES, solve, validateSolver, type Solution, type TemplateKey } from "./helpers/Circuit";
+import { TASKS, TaskProgress } from "./helpers/Tasks";
 
 const WIRE = new Color(0.62, 0.70, 0.82, 1);
 const DEAD_WIRE = new Color(0.32, 0.36, 0.44, 1);
@@ -38,6 +39,7 @@ const BATTERY = new Color(0.95, 0.86, 0.45, 1);
 const SWITCH_ON = new Color(0.45, 0.90, 0.55, 1);
 const SWITCH_OFF = new Color(0.90, 0.45, 0.42, 1);
 const CARRIER = new Color(0.40, 0.78, 1.00, 1);
+const TASK_SOLVED = new Color(0.45, 0.90, 0.55, 1);
 
 /** One colour per resistor, matching its row in the readout. */
 const ELEMENT_COLORS: Record<string, Color> = {
@@ -66,7 +68,9 @@ export default class Circuits extends ScenarioBehaviour {
     private _solution!: Solution;
 
     private _emf = 12;
-    private readonly _resistance = [24, 20, 20];
+    // R₁ = 30, not 24: 12 V / 24 Ω is exactly the lamp task's 0.5 A, which would
+    // open the scenario with a task already solved.
+    private readonly _resistance = [30, 20, 20];
     private _closed = true;
     private _showCarriers = true;
     private _phase = 0;
@@ -74,6 +78,14 @@ export default class Circuits extends ScenarioBehaviour {
     private _tabs: Button[] = [];
     private _setRow!: (row: number, text: string) => void;
     private _lessonText!: UIText;
+
+    // Task mode: the platform owns the submit button, so the scenario only
+    // reports the score whenever the set of solved tasks changes.
+    private readonly _tasks = new TaskProgress();
+    private _taskRows: UIText[] = [];
+    private _taskHeader!: UIText;
+    /** reportResult is accepted from start() on, not during awake(). */
+    private _reporting = false;
 
     private readonly _scratch = new Vector3(0, 0, 0);
     private readonly _scale = new Vector3(1, 1, 1);
@@ -100,6 +112,12 @@ export default class Circuits extends ScenarioBehaviour {
 
         this._createUI();
         this._select("single");
+    }
+
+    override start(): void {
+        // The state built during awake(), which could not be reported then.
+        this._reporting = true;
+        this._reportTasks();
     }
 
     override update(): void {
@@ -135,6 +153,27 @@ export default class Circuits extends ScenarioBehaviour {
     private _recompute(): void {
         this._solution = solve(this._template, this._emf, this._resistance, this._closed);
         this._refreshReadout();
+        // Only the circuit on screen is re-checked: the sliders are shared, so
+        // re-checking the other three would unsolve tasks the student left.
+        const changed = this._tasks.evaluate(this._template, this._emf, this._solution);
+        this._refreshTasks();
+        if (changed) this._reportTasks();
+    }
+
+    private _reportTasks(): void {
+        if (!this._reporting) return;
+        this.reportResult({ score: this._tasks.score, completed: this._tasks.completed });
+    }
+
+    private _refreshTasks(): void {
+        const solvedCount = TASKS.filter((t) => this._tasks.isSolved(t.key)).length;
+        this._taskHeader.text = `Завдання: розв'язано ${solvedCount} з ${TASKS.length}`;
+        TASKS.forEach((task, i) => {
+            const solved = this._tasks.isSolved(task.key);
+            const row = this._taskRows[i];
+            row.text = `${solved ? "[+]" : "[ ]"} ${i + 1}. ${task.text}`;
+            row.color = solved ? TASK_SOLVED : task.key === this._template ? UI.text : UI.textDim;
+        });
     }
 
     private _currentOn(source: string): number {
@@ -389,6 +428,17 @@ export default class Circuits extends ScenarioBehaviour {
                 fontSize: 11, color: ELEMENT_COLORS[id], wordWrap: false,
             });
         });
+
+        // ── tasks (right, below the controls) ──
+        makePanel(canvas, { anchor: "top-right", x: 16, y: 354, width: 288, height: 214 });
+        this._taskHeader = makeLabel(canvas, {
+            anchor: "top-right", x: 28, y: 362, width: 264, height: 20,
+            text: "", fontSize: 14, color: UI.accent, wordWrap: false,
+        });
+        this._taskRows = TASKS.map((task, i) => makeLabel(canvas, {
+            anchor: "top-right", x: 28, y: 390 + i * 44, width: 264, height: 40,
+            text: task.text, fontSize: 12,
+        }));
 
         this._lessonText = makeLabel(canvas, {
             anchor: "bottom-left", x: 24, y: 48, width: 560, height: 74,
