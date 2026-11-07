@@ -31,6 +31,15 @@ test("DW_2_2 only Circuits declares graded in scenario.meta.json", () => {
     }
 });
 
+test("readScenarioMeta: entryScene is relative to assets/, any prefix or slash style folded", () => {
+    assert.equal(metaWith({ entryScene: "scenes/main.scene.json" }).entryScene, "scenes/main.scene.json");
+    assert.equal(metaWith({ entryScene: "assets/scenes/main.scene.json" }).entryScene, "scenes/main.scene.json");
+    assert.equal(metaWith({ entryScene: ".\\scenes\\main.scene.json" }).entryScene, "scenes/main.scene.json");
+    assert.equal(metaWith({ entryScene: "" }).entryScene, undefined);
+    assert.equal(metaWith({ entryScene: 3 }).entryScene, undefined);
+    assert.equal(metaWith({}).entryScene, undefined);
+});
+
 function manifestOf(zip) {
     const tar = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
     return JSON.parse(execFileSync(existsSync(tar) ? tar : "tar", ["-xOf", zip, "manifest.json"], { encoding: "utf8" }));

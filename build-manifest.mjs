@@ -528,6 +528,7 @@ function emitManifest(scenarioName, scenarioDir, kind) {
             ...(meta.description ? { description: meta.description } : {}),
             version: meta.contentVersion,
             entry: `scripts/${zipManifest.entryPoint}`,
+            ...(typeof zipManifest.entryScene === "string" ? { entryScene: zipManifest.entryScene } : {}),
             scripts,
             assets,
         };
