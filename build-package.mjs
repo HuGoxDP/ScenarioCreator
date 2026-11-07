@@ -342,6 +342,13 @@ function buildScenario(scenarioDir, ktx2, kind) {
             .map((assetPath) => ({ guid: assetGuid(meta.id, assetPath), path: assetPath }))
         : [];
 
+    if (meta.entryScene && !existsSync(path.join(distAssetsDir, meta.entryScene))) {
+        throw new Error(
+            `${scenarioName}: scenario.meta.json names entryScene "${meta.entryScene}", ` +
+            `but assets/${meta.entryScene} does not exist.`
+        );
+    }
+
     const manifest = {
         manifestVersion: "1.0",
         id: meta.id,
@@ -353,6 +360,7 @@ function buildScenario(scenarioDir, ktx2, kind) {
         ...(meta.graded ? { graded: true } : {}),
         engineVersion: installedEngineVersion(rootDir),
         entryPoint,
+        ...(meta.entryScene ? { entryScene: meta.entryScene } : {}),
         // Stable identities, so a scene serialized while this ran from a ZIP
         // still resolves when the same scenario is served from a manifest —
         // build-manifest.mjs derives them the same way, from the same id.

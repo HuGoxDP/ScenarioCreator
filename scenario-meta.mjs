@@ -89,6 +89,10 @@ export function readScenarioMeta(scenarioDir, scenarioName) {
         // Hint for the host: this scenario reports a result through
         // reportResult. Only a literal `true` counts; anything else is absent.
         graded: raw.graded === true ? true : undefined,
+        // The scene the engine builds after the entry point's awake(), relative
+        // to assets/ (the manifest's `entryScene`). Absent: the entry point
+        // builds its own world.
+        entryScene: str(raw.entryScene)?.replace(/\\/g, "/").replace(/^(\.\/|assets\/)+/, ""),
         author: raw.author && typeof raw.author === "object" ? raw.author : undefined,
         priorities: raw.streaming?.priorities ? Object.entries(raw.streaming.priorities) : [],
     };

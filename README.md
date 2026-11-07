@@ -15,6 +15,10 @@ by name.
   - Detects `entryPoint` automatically by finding exactly one class that `extends ScenarioBehaviour`.
   - Generates `<scenario>/dist/manifest.json` from the scenario's optional `scenario.meta.json`
     (derived defaults when absent), plus the detected `entryPoint` and a stable guid per asset.
+    `"entryScene": "scenes/main.scene.json"` in `scenario.meta.json` (path relative to `assets/`) is written
+    into the manifest, and the engine builds that scene after the entry point's `awake()`; the build fails if
+    the file is not in `assets/`. It needs an engine that reads `entryScene` (WebEngineTS after B0); an older
+    engine ignores the field.
   - Copies `<scenario>/assets` if present.
   - Creates `<scenario>.zip` in `ReleaseScenarios/` (or `ReleaseScenarios/test/`).
   - Removes `<scenario>/dist` after ZIP creation.
