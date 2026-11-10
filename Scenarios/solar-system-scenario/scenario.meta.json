@@ -6,5 +6,16 @@
   "version": "3.5.0",
   "contentVersion": 1,
 
-  "_comment": "id is deliberately 'solar-system' rather than the folder name: that is the slug this scenario already has in virtual-lab's catalogue, and CLAUDE.md is explicit that the mismatch between manifest id and catalogue id is to be fixed here rather than by making the platform tolerate it. version tracks the '3.5' the scenario source has called itself since before this file existed. No streaming.priorities block: the built-in ladder already produces a real spread here, because this scenario has .glb models to mark 'high' and a skybox to mark 'critical'."
+  "_comment": "id is deliberately 'solar-system' rather than the folder name: that is the slug this scenario already has in virtual-lab's catalogue, and CLAUDE.md is explicit that the mismatch between manifest id and catalogue id is to be fixed here rather than by making the platform tolerate it. version tracks the '3.5' the scenario source has called itself since before this file existed. The streaming.priorities block exists for one reason — G2 (ENGINE-GAPS.md). Each of these six bodies ships BOTH a .glb model and a loose albedo (the fallback Scenario.ts applies only when Resources.tryLoad(models/<key>) returns null), and every one of those glbs ships, so the loose texture is never requested at run time. The streamed path prefetches everything not marked Lazy, so it used to decode all six and hold ~2.8x the ZIP path's live Texture memory for the same 20 uploaded textures (96.8 MB against 273.8 MB, ROADMAP P7). Marking them Lazy keeps them shipped — the fallback still works if a glb ever fails to load — while the prefetch skips them, so the streamed path now measures like the ZIP one. Earth has no .glb, so its albedo/normal/emissive stay on the default ladder and are still used.",
+  "streaming": {
+    "priorities": {
+      "textures/mercury.jpg": "lazy",
+      "textures/venus_atmosphere.jpg": "lazy",
+      "textures/mars.jpg": "lazy",
+      "textures/jupiter.jpg": "lazy",
+      "textures/saturn.jpg": "lazy",
+      "textures/moon.jpg": "lazy",
+      "textures/saturn_ring.png": "lazy"
+    }
+  }
 }
