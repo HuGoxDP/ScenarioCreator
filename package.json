@@ -20,7 +20,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "WebEngineTS": "file:WebEngineTS-0.1.0.tgz"
+    "WebEngineTS": "https://github.com/HuGoxDP/WebEngineTS/releases/download/v0.2.0/WebEngineTS-0.2.0.tgz"
   },
   "devDependencies": {
     "typescript": "^6.0.2"

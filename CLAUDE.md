@@ -38,9 +38,11 @@ easy to break and the reasons behind them.
 This repo is the **content producer** of a four-repo ecosystem (all under
 `C:\Users\HuGox\WebstormProjects\`):
 
-- **WebEngineTS** — the 3D engine. Consumed here as a packed tarball
-  (`WebEngineTS-0.1.0.tgz`, a `file:` dependency) purely so scenario TypeScript can compile
-  against `ScenarioBehaviour` and the rest of the engine API.
+- **WebEngineTS** — the 3D engine. Consumed as the **v0.2.0 release tarball from its URL**
+  (`https://github.com/HuGoxDP/WebEngineTS/releases/download/v0.2.0/WebEngineTS-0.2.0.tgz`)
+  purely so scenario TypeScript can compile against `ScenarioBehaviour` and the rest of the
+  engine API. The lockfile pins that exact tarball's integrity, so `npm ci` builds against
+  the release and nothing else — there is no committed tarball to fall out of date.
 - **virtual-lab** — the web platform students use. Consumes the ZIPs this repo produces,
   uploaded through its `/admin` screen. It stores only catalog metadata and the archives.
 - **WebEngineTSEditor** — the graphical editor; another engine consumer.
@@ -49,8 +51,9 @@ Data flow is one-directional: **engine → this repo → ZIP → virtual-lab**. 
 from the platform, and the platform never builds scenarios.
 
 Each repo keeps its **own copy** of the engine tarball. They are not kept in lockstep
-automatically — `WebEngineTS-0.1.0.tgz` here can lag behind the one in `virtual-lab`. If a
-scenario compiles here but fails at runtime in the platform, suspect that gap first.
+automatically — the release this repo builds against can lag behind the one `virtual-lab`
+serves (its `frontend/WebEngineTS-0.1.0.tgz` is packed by hand). If a scenario compiles here
+but fails at runtime in the platform, suspect that gap first.
 
 ## Critical rules
 
@@ -112,6 +115,22 @@ ZIP has to keep resolving when the same scenario is later served from a manifest
 `sha256(id + NUL + path)` — never content — so re-encoding a texture does not move one, and a
 rebuild produces byte-identical output. Renaming an asset *does* change its guid; that is the
 honest limit of deriving identity from a path.
+
+**A `.meta` sidecar overrides the derivation.** The editor writes `<file>.meta`
+(JSON: `{ "guid": <32 hex> }`) beside every asset it creates
+(`WebEngineTSEditor/docs/unity-editor-plan.md` §3.3), and the builder takes that guid when the
+file is present — so an asset survives a rename in the editor. A sidecar that is not JSON, or
+whose guid is not exactly 32 hex, is a warning and the derived guid: a malformed id must not
+silently mis-address an asset. `.meta` files are **never copied into the archive or the streaming
+store** — the manifest carries the guid, so the artifact does not need the sidecar. Both builders
+take the same rule from `scenario-meta.mjs` (`assetGuidFor`), so the two artifacts cannot
+disagree. Fixture: `TestScenarios/GuidFromMeta`.
+
+**Scenario scripts compile with legacy decorators.** The engine's serialization API
+(`@Serializable`, `@SerializedField`, `@Range`, …) is the legacy decorator kind, and the builder
+runs `tsc` with `--ignoreConfig` — no tsconfig may supply flags for a scenario — so
+`--experimentalDecorators` is on the command line. No `--emitDecoratorMetadata`: the engine reads
+no design: type metadata. Fixture: `TestScenarios/DecoratorScenario`.
 
 ## Platform contract
 
