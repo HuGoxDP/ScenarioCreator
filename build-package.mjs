@@ -188,6 +188,12 @@ function compileScenarioTypescript(scenarioDir, scriptsDir, distDir) {
         tscPath,
         "--pretty", "false",
         "--ignoreConfig",
+        // Legacy decorators: the engine's serialization API (`@Serializable`,
+        // `@SerializedField`, `@Range` ...) is the legacy kind, and `--ignoreConfig`
+        // means no tsconfig may supply the flag for us. TypeScript 6 refuses the
+        // decorator syntax outright without it (TS1219/TS1240), so one scenario
+        // using the API would fail the whole build.
+        "--experimentalDecorators",
         "--target", "ES2020",
         "--module", "ESNext",
         "--moduleResolution", "bundler",
