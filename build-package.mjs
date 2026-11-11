@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { assetGuid, installedEngineVersion, readScenarioMeta } from "./scenario-meta.mjs";
+import { assetGuidFor, installedEngineVersion, isAssetMetaFile, readScenarioMeta } from "./scenario-meta.mjs";
 
 const rootDir = process.cwd();
 // Two sources, kept apart on purpose. `Scenarios/` is what students get;
@@ -323,7 +323,13 @@ function buildScenario(scenarioDir, ktx2, kind) {
     }
 
     if (existsSync(assetsDir)) {
-        cpSync(assetsDir, path.join(distDir, "assets"), { recursive: true });
+        // `.meta` sidecars stay in the source tree: the manifest carries the
+        // guid they state, so copying them would put the editor's bookkeeping
+        // into an artifact that has no use for it.
+        cpSync(assetsDir, path.join(distDir, "assets"), {
+            recursive: true,
+            filter: (src) => !isAssetMetaFile(src),
+        });
     }
 
     // The manifest is written after the assets are staged, not before: --ktx2
@@ -339,7 +345,7 @@ function buildScenario(scenarioDir, ktx2, kind) {
                 return `assets/${rel.replace(/\\/g, "/")}`;
             })
             .sort()
-            .map((assetPath) => ({ guid: assetGuid(meta.id, assetPath), path: assetPath }))
+            .map((assetPath) => ({ guid: assetGuidFor(scenarioDir, meta.id, assetPath), path: assetPath }))
         : [];
 
     if (meta.entryScene && !existsSync(path.join(distAssetsDir, meta.entryScene))) {
