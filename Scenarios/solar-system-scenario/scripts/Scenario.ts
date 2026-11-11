@@ -10,7 +10,6 @@ import {
     StandardMaterial, Material, Shader, Input, KeyCode,
     Texture2D, Resources,
     Cubemap, RenderSettings,
-    MemoryProfiler,
 } from "WebEngineTS";
 
 import { createCameraRig, type ICameraRig } from "./helpers/CameraSetup";
@@ -86,8 +85,6 @@ export default class SolarSystem extends ScenarioBehaviour {
 
     override async awake(): Promise<void> {
         Texture2D.maxSize = 4096;
-        MemoryProfiler.showOverlay();
-        MemoryProfiler.logReport();
 
         this._camera = createCameraRig({
             useSkybox: true, orbitDistance: 38,
@@ -107,9 +104,8 @@ export default class SolarSystem extends ScenarioBehaviour {
         // Release ZIP — all assets loaded, no more loading needed
         this.context.assets.releaseArchive();
 
-        MemoryProfiler.logReport();
         console.log("[SolarSystem] Setup complete");
-        console.log("[SolarSystem] 1=Orbit  2=Fly  3=Follow(Earth)  P=Pause  M=Memory");
+        console.log("[SolarSystem] 1=Orbit  2=Fly  3=Follow(Earth)  P=Pause");
         console.log("[SolarSystem] F/G=inspect next/previous body (pauses)  0=back to system view");
         console.log(`[SolarSystem] Cache: ${Resources.cacheSize} assets`);
     }
@@ -131,7 +127,6 @@ export default class SolarSystem extends ScenarioBehaviour {
                 }
                 this._loadedTextures = [];
                 console.log("[SolarSystem] CPU texture data released");
-                MemoryProfiler.logReport();
             }
         }
 
@@ -149,10 +144,6 @@ export default class SolarSystem extends ScenarioBehaviour {
             setSimulationPaused(this._paused);
             console.log(`[SolarSystem] ${this._paused ? "\u23f8 Paused" : "\u25b6 Resumed"}`);
         }
-        if (Input.getKeyDown(KeyCode.KeyM)) {
-            if (MemoryProfiler.isOverlayVisible) MemoryProfiler.hideOverlay();
-            else MemoryProfiler.showOverlay();
-        }
     }
 
     override fixedUpdate(): void {}
@@ -160,7 +151,6 @@ export default class SolarSystem extends ScenarioBehaviour {
 
     override onDestroy(): void {
         setSimulationPaused(false);
-        MemoryProfiler.hideOverlay();
         Texture2D.maxSize = 0;
         Resources.unloadUnused();
         console.log("[SolarSystem] Ended.");
