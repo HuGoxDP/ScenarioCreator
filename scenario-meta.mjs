@@ -57,6 +57,52 @@ export function assetGuid(scenarioId, assetPath) {
         .slice(0, 32);
 }
 
+/** The sidecar file an asset may state its own identity in. Optional. */
+const ASSET_META_SUFFIX = ".meta";
+
+/**
+ * The guid of an asset: the one its `.meta` sidecar states, else derived.
+ *
+ * The editor writes `<file>.meta` beside every asset it creates
+ * (`WebEngineTSEditor/docs/unity-editor-plan.md` §3.3), so an asset keeps its
+ * identity across a rename there, and this repo takes that guid when the file
+ * is present. Absent — or malformed — falls back to the derivation, which is
+ * what every production scenario has today.
+ *
+ * A `.meta` file is never copied into the archive or the streaming store: the
+ * manifest carries the guid, so the artifact does not need the sidecar, and a
+ * stray one would be one more file to keep in step.
+ *
+ * @param scenarioDir absolute path of the scenario folder
+ * @param scenarioId the id from {@link readScenarioMeta}
+ * @param assetPath the `assets/`-prefixed path, forward slashes
+ */
+export function assetGuidFor(scenarioDir, scenarioId, assetPath) {
+    const metaPath = path.join(scenarioDir, `${assetPath}${ASSET_META_SUFFIX}`);
+    if (!existsSync(metaPath)) return assetGuid(scenarioId, assetPath);
+    let stated;
+    try {
+        stated = JSON.parse(readFileSync(metaPath, "utf8"));
+    } catch {
+        console.warn(`  [guid] ${assetPath}: ${ASSET_META_SUFFIX} is not JSON — using the derived guid`);
+        return assetGuid(scenarioId, assetPath);
+    }
+    const guid = stated && typeof stated === "object" ? stated.guid : undefined;
+    if (typeof guid !== "string" || !/^[0-9a-fA-F]{32}$/.test(guid)) {
+        console.warn(`  [guid] ${assetPath}: ${ASSET_META_SUFFIX} has no 32-hex guid — using the derived guid`);
+        return assetGuid(scenarioId, assetPath);
+    }
+    return guid.toLowerCase();
+}
+
+/**
+ * Whether an assets-copy must skip a path: `.meta` sidecars are the editor's,
+ * not the artifact's (see {@link assetGuidFor}).
+ */
+export function isAssetMetaFile(assetPath) {
+    return assetPath.endsWith(ASSET_META_SUFFIX);
+}
+
 /**
  * Reads `<scenario>/scenario.meta.json`, filling in derived defaults.
  *

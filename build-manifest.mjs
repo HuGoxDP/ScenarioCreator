@@ -54,7 +54,7 @@ import path from "node:path";
 
 import { parseStreamingManifest, StreamingAssetSource, toScenarioManifest } from "WebEngineTS";
 
-import { assetGuid, readScenarioMeta } from "./scenario-meta.mjs";
+import { assetGuidFor, readScenarioMeta } from "./scenario-meta.mjs";
 
 const rootDir = process.cwd();
 const scenariosRoot = path.join(rootDir, "Scenarios");
@@ -514,7 +514,7 @@ function emitManifest(scenarioName, scenarioDir, kind) {
 
                 assets.push({
                     path: `assets/${rel}`,
-                    guid: assetGuid(meta.id, `assets/${rel}`),
+                    guid: assetGuidFor(scenarioDir, meta.id, `assets/${rel}`),
                     priority,
                     lods,
                 });

@@ -102,7 +102,7 @@ jobs:
       # there so that adding the field later cannot quietly bring the cache
       # back. npm's cache is addressed by the integrity the lockfile records,
       # and with a warm cache `npm ci` installs the engine *from the cache*
-      # instead of reading WebEngineTS-0.1.0.tgz. A tarball replaced without a lockfile update
+      # instead of reading the engine tarball. A tarball replaced without a lockfile update
       # (`release:local -- --no-install`) then installs the previous engine and
       # passes. With a cold cache, as here, it fails with EINTEGRITY — which is
       # the point. Both reproduced with npm 10.9; the cache would save seconds
