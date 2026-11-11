@@ -38,9 +38,11 @@ easy to break and the reasons behind them.
 This repo is the **content producer** of a four-repo ecosystem (all under
 `C:\Users\HuGox\WebstormProjects\`):
 
-- **WebEngineTS** — the 3D engine. Consumed here as a packed tarball
-  (`WebEngineTS-0.1.0.tgz`, a `file:` dependency) purely so scenario TypeScript can compile
-  against `ScenarioBehaviour` and the rest of the engine API.
+- **WebEngineTS** — the 3D engine. Consumed as the **v0.2.0 release tarball from its URL**
+  (`https://github.com/HuGoxDP/WebEngineTS/releases/download/v0.2.0/WebEngineTS-0.2.0.tgz`)
+  purely so scenario TypeScript can compile against `ScenarioBehaviour` and the rest of the
+  engine API. The lockfile pins that exact tarball's integrity, so `npm ci` builds against
+  the release and nothing else — there is no committed tarball to fall out of date.
 - **virtual-lab** — the web platform students use. Consumes the ZIPs this repo produces,
   uploaded through its `/admin` screen. It stores only catalog metadata and the archives.
 - **WebEngineTSEditor** — the graphical editor; another engine consumer.
@@ -49,8 +51,9 @@ Data flow is one-directional: **engine → this repo → ZIP → virtual-lab**. 
 from the platform, and the platform never builds scenarios.
 
 Each repo keeps its **own copy** of the engine tarball. They are not kept in lockstep
-automatically — `WebEngineTS-0.1.0.tgz` here can lag behind the one in `virtual-lab`. If a
-scenario compiles here but fails at runtime in the platform, suspect that gap first.
+automatically — the release this repo builds against can lag behind the one `virtual-lab`
+serves (its `frontend/WebEngineTS-0.1.0.tgz` is packed by hand). If a scenario compiles here
+but fails at runtime in the platform, suspect that gap first.
 
 ## Critical rules
 
