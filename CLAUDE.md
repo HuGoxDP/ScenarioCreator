@@ -116,6 +116,22 @@ ZIP has to keep resolving when the same scenario is later served from a manifest
 rebuild produces byte-identical output. Renaming an asset *does* change its guid; that is the
 honest limit of deriving identity from a path.
 
+**A `.meta` sidecar overrides the derivation.** The editor writes `<file>.meta`
+(JSON: `{ "guid": <32 hex> }`) beside every asset it creates
+(`WebEngineTSEditor/docs/unity-editor-plan.md` §3.3), and the builder takes that guid when the
+file is present — so an asset survives a rename in the editor. A sidecar that is not JSON, or
+whose guid is not exactly 32 hex, is a warning and the derived guid: a malformed id must not
+silently mis-address an asset. `.meta` files are **never copied into the archive or the streaming
+store** — the manifest carries the guid, so the artifact does not need the sidecar. Both builders
+take the same rule from `scenario-meta.mjs` (`assetGuidFor`), so the two artifacts cannot
+disagree. Fixture: `TestScenarios/GuidFromMeta`.
+
+**Scenario scripts compile with legacy decorators.** The engine's serialization API
+(`@Serializable`, `@SerializedField`, `@Range`, …) is the legacy decorator kind, and the builder
+runs `tsc` with `--ignoreConfig` — no tsconfig may supply flags for a scenario — so
+`--experimentalDecorators` is on the command line. No `--emitDecoratorMetadata`: the engine reads
+no design: type metadata. Fixture: `TestScenarios/DecoratorScenario`.
+
 ## Platform contract
 
 `virtual-lab/backend/archive-validation.js` rejects an upload unless:
