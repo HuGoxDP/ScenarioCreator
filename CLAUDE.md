@@ -124,9 +124,10 @@ honest limit of deriving identity from a path.
 - `manifestVersion` has a major version the student player reads — only 1 (this repo writes `"1.0"`);
 - `scripts/<entryPoint>` actually exists inside the archive;
 - every `*.scene.json` / `*.prefab.json`, in any directory and any letter case, is a JSON object
-  whose `version` the player reads — absent means 1, and 1 is the only one. Version 2 ("link mode",
-  prefab instances saved as a link plus changes) is refused: the deployed player checks no version
-  and would load it hollow.
+  whose `version` the player reads — absent means 1. A **scene** is version 1 only (a link-mode scene
+  needs its prefabs preloaded, which the exported scenario template does not do); a **prefab** may be
+  1 or 2 (A10: the platform now ships the v0.2.0 engine, which reads version-2 prefab files through
+  `Resources`/`AssetFiles` with its nested prefabs preloaded).
 
 A build that satisfies this repo's own rules satisfies all of that automatically except the last:
 `assets/` is copied verbatim, so a scene or prefab saved in link mode reaches the archive as it is
